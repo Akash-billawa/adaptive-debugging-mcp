@@ -1,0 +1,31 @@
+{
+  "name": "adaptive-debugging-mcp",
+  "version": "0.1.0",
+  "description": "Adaptive Debugging Intelligence MCP for OpenCode CLI: persistent debugging memory, nested experiment trees, evidence-backed outcomes, and verified resolution.",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "bin": {
+    "adaptive-debugging-mcp": "src/server/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/server/index.ts",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "test:unit": "bun test tests/unit",
+    "test:integration": "bun test tests/integration",
+    "smoke": "bun run tests/smoke/stdio-smoke.ts",
+    "plugin-smoke": "bun run tests/smoke/plugin-smoke.ts",
+    "obs-check": "bun run tests/smoke/obs-check.ts"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "@types/bun": "^1.1.0"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.27"
+  }
+}

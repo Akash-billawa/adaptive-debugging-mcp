@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Secrets and environment files (never commit credentials)
+.env
+.env.*
+!.env.example
+
+# Local debugging memory database and evidence (never commit real history)
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+.adaptive-debug/
+data/
+
+# Logs and generated artifacts
+*.log
+dist/
+coverage/
+
+# OS cruft
+.DS_Store
+Thumbs.db

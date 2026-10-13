@@ -1,0 +1,42 @@
+// opencode.jsonc.example — copy to your project's opencode.json / opencode.jsonc
+// (or merge) and replace the placeholders. Schema is OpenCode V2 (servers live
+// under "mcp.servers"). Docs: https://opencode.ai/v2/docs/mcp-servers/
+//
+// IMPORTANT — observation plugin registration does NOT belong in the "plugins"
+// config array: OpenCode 2.0.27 requires directory entries there, and a file path
+// is rejected with WARN "configured plugin path must be a directory" (verified in
+// a live investigation; see the ADIM memory DB, incident inc_mv6e7w70).
+//
+// Register the plugin through global auto-discovery instead — place this loader
+// file at:
+//   Windows:  %USERPROFILE%\.config\opencode\plugins\adaptive-debug-observer.ts
+//   Linux/macOS: ~/.config/opencode/plugins/adaptive-debug-observer.ts
+//
+//   // adaptive-debug-observer.ts — re-exports the canonical dual-export plugin
+//   import AdaptiveDebugObserver from "file:///<abs-path-to-repo-with-%20-for-spaces>/adaptive-debugging-mcp/plugin/index.ts";
+//   export const AdaptiveDebugObserverPlugin = AdaptiveDebugObserver;
+//   export default AdaptiveDebugObserver;
+//
+// The file:// URL form is deliberate: the repo path may sit outside the config
+// tree, and a plain relative specifier from the plugins directory is easy to get
+// wrong (three '../' resolved to the wrong drive location in the live trial —
+// use the absolute URL and percent-encode spaces as %20).
+//
+// Database: omit "environment" entirely so the MCP server and the observation
+// plugin resolve the SAME default database path
+// (%APPDATA%\adaptive-debugging-mcp\debug-memory.db on Windows,
+// ~/.local/share/adaptive-debugging-mcp/ elsewhere). Set ADAPTIVE_DEBUG_DB_PATH
+// as a GLOBAL environment variable to move it for both processes at once.
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "adaptive-debug-memory": {
+        "type": "local",
+        "command": ["bun", "run", "<absolute-path-to-adaptive-debugging-mcp>/src/server/index.ts"],
+        "cwd": "<absolute-path-to-adaptive-debugging-mcp>",
+        // "environment": { "ADAPTIVE_DEBUG_DB_PATH": "<optional-absolute-writable-db-path>" }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "adaptive-debug-memory": {
+        "type": "local",
+        "command": [
+          "bun",
+          "run",
+          "C:/Adaptive Debugging MCP/adaptive-debugging-mcp/src/server/index.ts"
+        ],
+        "cwd": "C:/Adaptive Debugging MCP/adaptive-debugging-mcp"
+      }
+    }
+  }
+}
