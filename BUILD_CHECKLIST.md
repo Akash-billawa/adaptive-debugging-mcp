@@ -56,10 +56,11 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] Slash commands — `.opencode/commands/` (`deep-debug`, `resume-debug`, `debug-status`, `debug-review`)
 
 ## G. Observation plugin (Next) — DONE (v1, observation-only)
-- [x] `plugin/index.ts` OpenCode plugin: tool.execute.before/after + session.error hooks
+- [x] `plugin/index.ts` OpenCode plugin: tool.execute.before/after + session-level failure events
 - [x] Redaction before persistence; bounded summaries
 - [x] Idempotent event keys (dedup on retries)
 - [x] Honest capture states; no invented data; no cross-boundary claims; non-blocking writes
+- [x] **Event set corrected against a live host (2026-10-13):** v2.0.27 never publishes `session.error` for provider failures — it publishes `session.execution.failed` and `session.step.failed`, with the session id at `data.sessionID`. Watching only `session.error` was dead code; the filter now covers all three and `kind` records the real event type (`inc_mv6pxnhb…`)
 
 ## H. Tests (MVP) — DONE
 - [x] Unit: redaction (8), fingerprint (6), ids/labels (5)
@@ -81,7 +82,7 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] Workspace-root project duplicates removed (single source of truth; sub-repo keeps packaging templates)
 - [x] First two REAL incidents recorded through the live MCP tools (import provenance): I1 resolved with 3 verified validations; I2 reopened after controlled experiments and resolved with a root-caused explanation
 - [x] "No MCP servers configured" first-run behavior root-caused (fresh folders A/D/E, fast vs delayed retests): OpenCode time-gated per-directory initialization affecting ALL servers — external behavior; workaround documented in README troubleshooting
-- [ ] Observation-plugin in-host activation — pending verification (after `opencode service restart` or next OpenCode restart, run `bun run obs-check`; expect observations > 0)
+- [ ] Observation-plugin in-host activation — **VERIFIED (2026-10-13)**: 4,895 `failed to load plugin` entries before the loader fix, **0** after; `obs-check` went from 0 to a live-growing count (333 at last read) with canonical fields on every row, and real `session.step.failed` rows from the running host appear in the production DB. See incidents `inc_mv6e7w70…` (loader path) and `inc_mv6pxnhb…` (event set).
 
 ## K. Adaptive upgrade — exhaustion, refinement, budgets, evaluation (v0.2) — DONE
 - [x] Gap analysis verified against actual code (existing vocab/tree/duplicate/validation reused; no second server, no rewrite, additive-only changes)
