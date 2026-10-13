@@ -95,6 +95,15 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] Evaluation harness: 14 deterministic scenarios + metrics + baseline comparison (`tests/evaluation/scenarios.test.ts`) — covers the decision layer; live LLM-in-the-loop quality documented as requiring interactive sessions (honest limitation)
 - [x] Full verification: 73 tests / 223 assertions, `tsc --noEmit` clean, hermetic stdio smoke 31/31 (protocol-level budget error + relative no-partial-create checks)
 
+## L. Hardening (v0.2.1) — verified-outcome integrity, resolution traceability, multi-session safety — DONE
+- [x] Verified outcomes are immutable to ordinary updates: store-level CONFLICT guard (machine-readable details + actionable hint) blocks every verified -> * downgrade AND any attempt to SET verified without a validation run; non-outcome enrichment of verified experiments remains allowed
+- [x] Auditable regression path: a failing re-validation downgrades verified -> failed with an `experiment.outcome.regressed` timeline event; inconclusive re-validations record doubt without downgrading; validation history stays append-only (both records retained); a later passing validation can re-verify
+- [x] Resolution traceability: `resolution_experiment_id` is DERIVED from the qualifying validation's experiment — store-level enforcement inside the same transaction (direct callers cannot bypass the tool check); invalid, missing, cross-incident, or unverified references are rejected with the incident state preserved exactly
+- [x] Multi-session safety guidance in the deep-debug skill + agent (global live copies AND packaged templates): re-check via `debug_next_experiment_prepare` / timeline at batch boundaries, reuse instead of duplicate, never silently mutate resolved cases, verified outcomes change only through validation
+- [x] Repo `opencode.json`: removed the machine-specific non-functional plugins file-path entry (live trial proved v2.0.27 requires directory entries); portable `opencode.jsonc.example` now documents the verified global auto-discovery loader registration
+- [x] Regression coverage: 11 new hardening tests (isolated `:memory:` DBs) — **84 total, 297 assertions, `tsc` clean, stdio protocol smoke 31/31**
+- [x] Parallel-session work preserved verbatim in its own commit (`8870d66`): plugin event-set correction (session.execution.failed / session.step.failed with `data.sessionID`) and activation verification
+
 ## Later (deliberately deferred — see Development Roadmap)
 
 - [ ] Semantic/embedding retrieval (only after baseline evaluation)

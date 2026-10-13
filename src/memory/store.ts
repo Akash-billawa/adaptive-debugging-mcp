@@ -313,22 +313,38 @@ export class Store {
       const allowed = VALID_INCIDENT_TRANSITIONS[inc.status] ?? [];
       if (!allowed.includes(status as any))
         throw conflict(`invalid incident transition ${inc.status} -> ${status}`);
-      if (status === "resolved" && !opts.verification_id)
-        throw validationError("resolved_verified requires a qualifying validation record id");
+      let resolutionExperimentId: string | null = null;
+      if (status === "resolved") {
+        // RESOLUTION TRACEABILITY: the qualifying validation is verified here at the
+        // store level (direct callers cannot bypass the tool check), and the experiment
+        // reference is DERIVED from the validation record — never supplied by the caller.
+        if (!opts.verification_id)
+          throw validationError("resolved_verified requires a qualifying validation record id");
+        const val = this.db
+          .query("SELECT * FROM validation_runs WHERE validation_run_id = ?")
+          .get(opts.verification_id) as ValidationRun | null;
+        if (!val || val.incident_id !== id)
+          throw notFound(`verification record not found for this incident: ${opts.verification_id}`);
+        if (val.resolution_decision !== "verified")
+          throw validationError("referenced validation run did not reach a verified decision");
+        resolutionExperimentId = val.experiment_id;
+      }
       if (!rationale) throw validationError("rationale is required for status change");
       const t = now();
       this.db
         .query("UPDATE incidents SET status = ?, updated_at = ?, summary_current = COALESCE(summary_current, ?) WHERE incident_id = ?")
         .run(status, t, status === "resolved" ? `Resolved: ${rationale}` : null, id);
       if (status === "resolved") {
-        this.db.query("UPDATE incidents SET resolved_at = ? WHERE incident_id = ?").run(t, id);
+        this.db
+          .query("UPDATE incidents SET resolved_at = ?, resolution_experiment_id = ? WHERE incident_id = ?")
+          .run(t, resolutionExperimentId, id);
       }
       appendTimelineEvent(this.db, {
         incident_id: id,
         event_type: `incident.status.${status}`,
         actor: actor as any,
         summary: `Status ${inc.status} -> ${status}: ${rationale}`,
-        details: { verification_id: opts.verification_id ?? null, blocked_reason: opts.blocked_reason ?? null, untested: opts.untested ?? [], next_review: opts.next_review ?? null },
+        details: { verification_id: opts.verification_id ?? null, resolution_experiment_id: resolutionExperimentId, blocked_reason: opts.blocked_reason ?? null, untested: opts.untested ?? [], next_review: opts.next_review ?? null },
       });
       return this.getIncidentOrFail(id);
     });
@@ -668,6 +684,28 @@ export class Store {
     return this.tx(() => {
       const prev = this.getExperiment(id);
       if (!prev) throw notFound(`experiment not found: ${id}`);
+      // VERIFIED-OUTCOME INTEGRITY: 'verified' is set only by a passing validation run
+      // and cannot be left (or entered) through ordinary updates. Downgrades require the
+      // auditable mechanism: a failing re-validation (which regresses the outcome and
+      // records it) or incident reopening. Supersession can be expressed via a link.
+      if (prev.outcome_status === "verified" && input.outcome_status !== undefined && input.outcome_status !== "verified")
+        throw conflict(
+          `experiment ${prev.display_label ?? id} is verified; ordinary updates cannot change its outcome from 'verified' to '${input.outcome_status}'`,
+          {
+            from: "verified",
+            to: input.outcome_status,
+            hint: "If the fix regressed, record a failing re-validation (debug_validation_record) — it downgrades the outcome auditably. To re-investigate, reopen the incident (debug_case_status_update). Use debug_case_link (supersedes) instead of changing the outcome.",
+          },
+        );
+      if (input.outcome_status === "verified" && prev.outcome_status !== "verified")
+        throw conflict(
+          "outcome 'verified' cannot be set through an ordinary update",
+          {
+            from: prev.outcome_status,
+            to: input.outcome_status,
+            hint: "Only a passing validation run (debug_validation_record) can mark an experiment verified.",
+          },
+        );
       // Any non-pending outcome is a claim and must be justified by observation/
       // interpretation/failure_reason OR attached evidence. Records the reason;
       // does not fabricate outcomes.
@@ -999,6 +1037,20 @@ export class Store {
       // A verified validation is the ONLY path that marks an experiment's outcome as verified.
       if (decision === "verified") {
         this.db.query("UPDATE experiments SET outcome_status = 'verified', execution_status = 'completed', updated_at = ? WHERE experiment_id = ?").run(now(), input.experiment_id);
+      } else if (input.execution_result === "failed" && exp.outcome_status === "verified") {
+        // REGRESSION: a failing re-validation on a verified fix downgrades it auditably.
+        // Inconclusive/interrupted re-validations leave the verified outcome in place —
+        // the doubt stays on file as validation history without a silent downgrade.
+        this.db.query("UPDATE experiments SET outcome_status = 'failed', updated_at = ? WHERE experiment_id = ?").run(now(), input.experiment_id);
+        appendTimelineEvent(this.db, {
+          incident_id: input.incident_id,
+          event_type: "experiment.outcome.regressed",
+          actor: validation.verified_by,
+          related_entity_type: "experiment",
+          related_entity_id: input.experiment_id,
+          summary: `Verified fix regressed: failing re-validation recorded; outcome verified -> failed (${exp.display_label ?? input.experiment_id})`,
+          details: { validation_run_id: validation.validation_run_id, before: "verified", after: "failed" },
+        });
       }
 
       appendTimelineEvent(this.db, {

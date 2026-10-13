@@ -128,6 +128,8 @@ A command can complete (`completed`) while its outcome is `failed` (bug remains)
 - Project isolation by default; cross-project search is explicit opt-in.
 - Duplicate event delivery does not create duplicate records (idempotency keys / unique event keys).
 - Invalid parents, cross-incident attachment, and invalid transitions are rejected; history is append-only.
+- A `verified` outcome is immutable to ordinary updates: downgrades return a machine-readable `CONFLICT`; only a failing re-validation can regress a verified fix (auditably, with an `experiment.outcome.regressed` timeline event), and only a passing validation can set `verified`.
+- Resolving an incident stamps `resolution_experiment_id` derived from the qualifying validation run — invalid or missing verification references are rejected with the incident state preserved.
 - Interrupted writes roll back (SQLite transactions); nothing reports success without a durable commit.
 
 ## Design boundaries

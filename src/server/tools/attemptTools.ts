@@ -85,7 +85,8 @@ export const attemptTools: Tool[] = [
       name: "debug_attempt_update",
       description:
         "Update a planned experiment's execution/outcome AFTER acting on it, preserving an audit trail. " +
-        "Requires a justification (or attached evidence) for a non-pending outcome. Outcome 'verified' is NOT set here — use debug_validation_record.",
+        "Requires a justification (or attached evidence) for a non-pending outcome. Outcome 'verified' is NOT set here — use debug_validation_record. " +
+        "A 'verified' outcome is also immutable here: ordinary downgrades return CONFLICT — record a failing re-validation (debug_validation_record) to regress a verified fix auditably.",
       inputSchema: objSchema(
         "Update an attempt",
         {

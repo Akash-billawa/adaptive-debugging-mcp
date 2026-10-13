@@ -14,6 +14,19 @@ A repeatable investigation procedure backed by the `adaptive-debug-memory` MCP s
 - Novelty with a reason: never re-run an equivalent experiment without stating what changed.
 - Verified resolution only: green commands are not fixes.
 
+## Multi-session safety
+
+Other sessions may be working the same incident through the shared memory. At meaningful boundaries — before planning a new batch of writes, before recording a validation, and before resolving — re-check the case:
+
+1. Call `debug_next_experiment_prepare` for the authoritative current state and recommended next action.
+2. If ownership, status, or recent activity is ambiguous, `debug_case_read` the case or `debug_timeline_read` the recent events — another session may have already done the work.
+3. Never create an experiment, evidence, or validation that already exists — reuse the existing record instead of duplicating.
+4. A resolved case is never silently mutated: a recurrence is reopened (`debug_case_status_update`) or a new incident is linked, not edited around.
+5. Re-check immediately before recording validation or resolving — concurrent sessions may have changed the state since you last looked.
+6. Verified outcomes are immutable to ordinary updates: a regressed fix is downgraded by recording a failing re-validation, never by editing the outcome field.
+
+Apply these checks at batch boundaries and convergence points — not after every field update.
+
 ## Step 0 — Decide the scope
 
 - Trivial bug with an obvious cause? Fix it directly; no records needed.
