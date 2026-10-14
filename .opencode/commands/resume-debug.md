@@ -1,14 +1,13 @@
 ---
-description: Resume an existing debugging investigation
+description: Resume an existing debugging investigation and implementation
 ---
 
 Resume the debugging investigation: $ARGUMENTS
 
 If an incident id was given, use it; otherwise find it with `debug_history_search`.
 
-1. `debug_case_read` the incident with sections attempts, hypotheses, timeline, validations.
-2. `debug_tree_read` the full branch tree; identify which outcomes are pending/inconclusive and which branches are untested.
-3. Summarize: what previous outcomes established, what remains uncertain, and which prior failures still apply under today's environment (note any environment changes).
-4. Propose the next experiment with an explicit reason it differs from prior attempts, then continue the loop: record → execute → record outcome → adapt.
-
-Do not repeat an equivalent experiment without new evidence or a changed condition.
+1. `debug_case_read` the incident with attempts, hypotheses, timeline, validations.
+2. `debug_next_experiment_prepare` and `debug_tree_read` the full branch tree; identify pending/inconclusive outcomes, budget usage, and untested branches.
+3. Summarize: previous outcomes, current uncertainties, and applicable branches.
+4. Propose the next experiment with `reason_for_difference` and record via `debug_attempt_create`.
+5. Continue the workflow: inspect code → implement minimal fix when authorized → run tests → record evidence → validate resolution.

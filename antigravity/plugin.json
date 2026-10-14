@@ -1,0 +1,11 @@
+{
+  "name": "adaptive-debugging",
+  "displayName": "Adaptive Debugging Intelligence",
+  "version": "1.0.0",
+  "description": "Adaptive debugging intelligence system with persistent incident memory, hypothesis trees, evidence recording, and verification before resolution.",
+  "suggestedPrompts": [
+    "Use deep-debug to investigate this recurring failure",
+    "Search adaptive debug memory for prior attempts at this bug",
+    "Review untested hypotheses and evidence for the current case"
+  ]
+}

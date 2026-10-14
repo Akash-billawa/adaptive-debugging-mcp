@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "adaptive-debug-memory": {
+      "command": "bun",
+      "args": [
+        "run",
+        "C:/Adaptive Debugging MCP/adaptive-debugging-mcp/src/server/index.ts"
+      ],
+      "env": {
+        "ADAPTIVE_DEBUG_DB_PATH": "C:/Users/Akash/AppData/Roaming/adaptive-debugging-mcp/debug-memory.db"
+      }
+    }
+  }
+}

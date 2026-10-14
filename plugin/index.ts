@@ -111,7 +111,7 @@ function trackedCallId(tool: string, argsText: string | null): string {
 }
 
 function sessionIdOf(event: any): string | null {
-  return (event?.sessionID ?? event?.session_id ?? event?.session ?? null) ?? null;
+  return event?.sessionID ?? event?.session_id ?? event?.session ?? null;
 }
 
 // --- Session-level failure events -------------------------------------------

@@ -96,6 +96,8 @@ In Code Mode the tools appear as `tools["adaptive-debug-memory"].<tool>` (17 too
 
 **Supporting:** `debug_hypothesis_manage`, `debug_research_record`, `debug_timeline_read`, `debug_case_link`, `debug_data_export`, `debug_server_health`.
 
+> **Argument-name note (`debug_hypothesis_manage`):** the field carrying a hypothesis is canonically **`statement`** (matching the store, the `Hypothesis` type and the `hypotheses.statement` column), alongside `rationale`. Agents have been observed sending `hypothesis` or `testable_claim` instead; the tool accepts those as backward-compatible aliases, prefers `statement` when both are present, and discloses in its response which name supplied the text (`statement_normalized_from`). The per-op required fields are listed in the tool's published description.
+
 **Adaptive decision layer (v0.2):** `debug_next_experiment_prepare` — assesses exhaustion, reports budget usage, ranks refinement candidates with explained heuristic factors (not probabilities), and recommends exactly ONE next action with its supporting evidence, unresolved uncertainty, expected observation, risk/cost, and what would change the decision; when a hard budget is reached it returns and durably records a resumable handoff. `debug_budget_manage` — view effective config/usage/next-experiment probe, set project defaults or per-incident overrides (incident changes recorded in the audit timeline). 17 tools total.
 
 Errors use machine-readable categories: `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `STORAGE_ERROR`, `LIMIT_EXCEEDED`, … (see `src/errors.ts`).

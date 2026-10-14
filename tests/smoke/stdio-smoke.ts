@@ -112,6 +112,39 @@ try {
   const hypId = hyp.structuredContent?.hypothesis_id;
   check("hypothesis created", typeof hypId === "string");
 
+  // 5b) REGRESSION (hypothesis contract): the attested alternative names work over
+  // the real protocol, are disclosed, and the canonical name is preferred.
+  // Agents have been observed sending `hypothesis` / `testable_claim` instead of
+  // the canonical `statement`; the handler accepts them for compatibility.
+  const hypAlias1 = await callTool("debug_hypothesis_manage", { op: "create_hypothesis", incident_id: incidentId, testable_claim: "Malformed payloads reach the handler because validation runs after routing", rationale: "crash happens inside the handler, past the router", actor: "agent" }, 100);
+  check("alias testable_claim creates a hypothesis", hypAlias1.structuredContent?.ok === true && typeof hypAlias1.structuredContent?.hypothesis_id === "string", hypAlias1.structuredContent ?? hypAlias1);
+  check("alias testable_claim is disclosed", hypAlias1.structuredContent?.statement_normalized_from === "testable_claim", hypAlias1.structuredContent);
+  const hypAlias2 = await callTool("debug_hypothesis_manage", { op: "create_hypothesis", incident_id: incidentId, hypothesis: "The 500 is returned by the error middleware, not the handler", rationale: "response shape matches the error formatter", actor: "agent" }, 101);
+  check("alias hypothesis creates a hypothesis", hypAlias2.structuredContent?.ok === true, hypAlias2.structuredContent ?? hypAlias2);
+  check("alias hypothesis is disclosed", hypAlias2.structuredContent?.statement_normalized_from === "hypothesis", hypAlias2.structuredContent);
+
+  // Canonical wins when both are present.
+  const hypBoth = await callTool("debug_hypothesis_manage", { op: "create_hypothesis", incident_id: incidentId, statement: "CANONICAL wins over aliases", hypothesis: "ALIAS must not be stored", testable_claim: "ALIAS2 must not be stored", rationale: "precedence check", actor: "agent" }, 102);
+  check("canonical statement wins over aliases", hypBoth.structuredContent?.ok === true && hypBoth.structuredContent?.statement_normalized_from === undefined, hypBoth.structuredContent);
+
+  // Missing statement (and any alias) is a self-describing validation error.
+  const hypMissing = await callTool("debug_hypothesis_manage", { op: "create_hypothesis", incident_id: incidentId, rationale: "no claim supplied", actor: "agent" }, 103);
+  const missingMsg = String(hypMissing.structuredContent?.error?.message ?? "");
+  check("missing statement is a self-describing validation error",
+    hypMissing.isError === true &&
+    hypMissing.structuredContent?.error?.category === "VALIDATION_ERROR" &&
+    missingMsg.includes("statement") && missingMsg.includes("testable_claim"),
+    hypMissing.structuredContent ?? hypMissing);
+
+  // The testable claim text is preserved verbatim as the stored statement.
+  const readBack = await callTool("debug_case_read", { incident_id: incidentId, sections: ["hypotheses"] }, 104);
+  const storedHyps = readBack.structuredContent?.hypotheses ?? [];
+  const storedAlias1 = storedHyps.find((h: any) => h.hypothesis_id === hypAlias1.structuredContent?.hypothesis_id);
+  const storedBoth = storedHyps.find((h: any) => h.hypothesis_id === hypBoth.structuredContent?.hypothesis_id);
+  check("alias-supplied testable claim preserved verbatim", storedAlias1?.statement === "Malformed payloads reach the handler because validation runs after routing", storedAlias1);
+  check("canonical statement preserved verbatim", storedBoth?.statement === "CANONICAL wins over aliases", storedBoth);
+
+
   // 6) strategy root "A", experiment "A1", variant "A1A"
   const strat = await callTool("debug_attempt_create", { incident_id: incidentId, node_kind: "strategy", title: "Ensure request body is parsed before handlers", hypothesis_id: hypId, expected_observation: "req.body is defined in handlers", risk_level: "low", actor: "agent" }, 6);
   const stratId = strat.structuredContent?.experiment_id;

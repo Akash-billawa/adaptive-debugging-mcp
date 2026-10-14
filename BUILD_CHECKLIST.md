@@ -104,6 +104,15 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] Regression coverage: 11 new hardening tests (isolated `:memory:` DBs) — **84 total, 297 assertions, `tsc` clean, stdio protocol smoke 31/31**
 - [x] Parallel-session work preserved verbatim in its own commit (`8870d66`): plugin event-set correction (session.execution.failed / session.step.failed with `data.sessionID`) and activation verification
 
+## M. Antigravity integration & end-to-end workflow (v0.2.2) — DONE
+- [x] Root-cause verified against the installed Antigravity (builtin docs + Google's own plugin agents): the agent frontmatter schema supports only `name`/`description`/`mainAgent`/`subagent`/`commandExecutionPolicy` — there is **no supported `tools:` declaration**, and `enable_write_tools`/`enable_mcp_tools` do not exist in any official artifact. The previously declared 13-entry tool list (incl. `replace_file_content`, `write_to_file`, `run_command`, `send_message`) never bound, which is why the recent session found those tools missing from its runtime declarations; earlier "root cause" claims about an `enable_write_tools` flag were incorrect and are retracted
+- [x] Canonical 8-step workflow defined: (1) search history, (2) hypothesize, (3) budget & plan, (4) inspect source code, (5) implement minimal fix with user authorization, (6) execute tests & inspect results, (7) record evidence, validation & resolution, (8) multi-session recheck
+- [x] Host capability awareness: accurately reports missing host capabilities (`write_to_file`/`replace_file_content`, `run_command`) when running in read-only agents, produces structured diagnostic handoffs, and records `blocked` outcome without guessing or fabricating tools
+- [x] Native host tool preference: leverages host's native file editing and terminal capabilities; never adds arbitrary execution or filesystem mutation to the memory MCP server
+- [x] Supported architecture implemented and active install synced (`~/.gemini/config/plugins/adaptive-debugging/`): frontmatter aligned to Google's own example (flutter a11y agent), fabricated `tools:` block and flag claims removed, and the architecture documented — ADIM provides history/evidence/budgets/validation; the coding-capable host agent performs file edits and command execution via a structured, implementation-ready handoff (the agent's response IS the handoff; no tool-based upstream delegation is assumed)
+- [x] Canonical Antigravity package committed to repository under `antigravity/`
+- [x] Regression suite: 7 new end-to-end workflow tests in `tests/integration/workflow.test.ts` covering non-stopping diagnosis, accurate missing-capability reporting, test-before-verify gating, failed test tracking, budget enforcement, concurrency safety, and contract compatibility (91 tests total, 355 assertions, `tsc` clean, stdio smoke 31/31)
+
 ## Later (deliberately deferred — see Development Roadmap)
 
 - [ ] Semantic/embedding retrieval (only after baseline evaluation)
