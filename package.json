@@ -14,6 +14,8 @@
     "test": "bun test",
     "test:unit": "bun test tests/unit",
     "test:integration": "bun test tests/integration",
+    "test:evaluation": "bun test tests/evaluation",
+    "eval": "bun test tests/evaluation/scenarios.test.ts",
     "smoke": "bun run tests/smoke/stdio-smoke.ts",
     "plugin-smoke": "bun run tests/smoke/plugin-smoke.ts",
     "obs-check": "bun run tests/smoke/obs-check.ts",
