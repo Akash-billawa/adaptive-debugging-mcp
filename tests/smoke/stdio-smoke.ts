@@ -85,10 +85,10 @@ try {
   const required = [
     "debug_case_start","debug_history_search","debug_case_read","debug_attempt_create",
     "debug_evidence_record","debug_attempt_update","debug_tree_read","debug_validation_record","debug_case_status_update",
-    "debug_next_experiment_prepare","debug_budget_manage",
+    "debug_next_experiment_prepare","debug_budget_manage","debug_candidate_compare",
   ];
   for (const r of required) check(`tool listed: ${r}`, names.includes(r));
-  check("17 tools registered", names.length === 17, names.length);
+  check("18 tools registered", names.length === 18, names.length);
 
   // 3) health (fresh db: zero records)
   const health0 = await callTool("debug_server_health", {}, 3);
@@ -217,6 +217,21 @@ try {
   const next = await callTool("debug_next_experiment_prepare", { incident_id: incidentId }, 23);
   check("next-action reports resolved state", next.structuredContent?.exhaustion?.state === "resolved" &&
     typeof next.structuredContent?.budget?.config?.max_total_experiments === "number", next.structuredContent?.exhaustion);
+
+  // 17) candidate compare over the real protocol
+  const compare = await callTool("debug_candidate_compare", {
+    incident_id: incidentId,
+    proposed_candidates: [
+      { title: "Mount body-parser in router", proposed_change: "app.use(bodyParser.json())", rationale: "Ensures req.body is parsed" },
+      { title: "Add optional chaining on req.body", proposed_change: "req.body?.id", rationale: "Defends against empty payload" },
+    ],
+  }, 24);
+  check("candidate compare returns pairwise matrix and recommended order",
+    compare.structuredContent?.ok === true &&
+    compare.structuredContent?.candidates_evaluated === 2 &&
+    Array.isArray(compare.structuredContent?.pairwise_comparisons) &&
+    Array.isArray(compare.structuredContent?.recommended_order),
+    compare.structuredContent);
 
   console.log(`\nSMOKE RESULT: ${passed} passed, ${failed} failed`);
 } catch (e) {

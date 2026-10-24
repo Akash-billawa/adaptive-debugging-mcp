@@ -76,7 +76,7 @@ The database lives at `%APPDATA%\adaptive-debugging-mcp\debug-memory.db` by defa
 
 **Known OpenCode behavior (not a bug here):** the first `opencode mcp list` from a folder OpenCode has never seen prints `No MCP servers configured` — for *all* servers, including global ones — until per-directory initialization completes (~1–2 minutes; fast retries keep showing it). Wait a minute and re-run. Characterized and validated against incident `inc_mv53g4qq…` in the memory DB.
 
-In Code Mode the tools appear as `tools["adaptive-debug-memory"].<tool>` (17 tools).
+In Code Mode the tools appear as `tools["adaptive-debug-memory"].<tool>` (18 tools).
 
 ## MCP tools
 
@@ -98,7 +98,7 @@ In Code Mode the tools appear as `tools["adaptive-debug-memory"].<tool>` (17 too
 
 > **Argument-name note (`debug_hypothesis_manage`):** the field carrying a hypothesis is canonically **`statement`** (matching the store, the `Hypothesis` type and the `hypotheses.statement` column), alongside `rationale`. Agents have been observed sending `hypothesis` or `testable_claim` instead; the tool accepts those as backward-compatible aliases, prefers `statement` when both are present, and discloses in its response which name supplied the text (`statement_normalized_from`). The per-op required fields are listed in the tool's published description.
 
-**Adaptive decision layer (v0.2):** `debug_next_experiment_prepare` — assesses exhaustion, reports budget usage, ranks refinement candidates with explained heuristic factors (not probabilities), and recommends exactly ONE next action with its supporting evidence, unresolved uncertainty, expected observation, risk/cost, and what would change the decision; when a hard budget is reached it returns and durably records a resumable handoff. `debug_budget_manage` — view effective config/usage/next-experiment probe, set project defaults or per-incident overrides (incident changes recorded in the audit timeline). 17 tools total.
+**Adaptive decision & comparison layer (v0.2+):** `debug_next_experiment_prepare` — assesses exhaustion, reports budget usage, ranks refinement candidates with explained heuristic factors (not probabilities), and recommends exactly ONE next action; `debug_budget_manage` — view effective config/usage/next-experiment probe, set project defaults or per-incident overrides; `debug_candidate_compare` — standalone candidate comparison matrix evaluating shared/diverging hypotheses, variable deltas, action overlap, prior evidence, risk, and near-duplicate warnings. 18 tools total.
 
 Errors use machine-readable categories: `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `STORAGE_ERROR`, `LIMIT_EXCEEDED`, … (see `src/errors.ts`).
 

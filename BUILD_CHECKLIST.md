@@ -113,10 +113,15 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] Canonical Antigravity package committed to repository under `antigravity/`
 - [x] Regression suite: 7 new end-to-end workflow tests in `tests/integration/workflow.test.ts` covering non-stopping diagnosis, accurate missing-capability reporting, test-before-verify gating, failed test tracking, budget enforcement, concurrency safety, and contract compatibility (91 tests total, 355 assertions, `tsc` clean, stdio smoke 31/31)
 
+## N. Candidate comparison matrix tool (v0.2.3) — DONE
+- [x] Pure comparison engine (`src/engine/compare.ts`): multi-candidate evaluation, pairwise diffing, action token overlap, and explainable heuristic ranking
+- [x] MCP tool `debug_candidate_compare` registered in catalog: supports both existing experiment IDs and proposed candidate definitions
+- [x] Duplicate detection & prior failure cross-checking integrated into comparison
+- [x] Unit, integration, and stdio smoke tests (103 total tests / 421 assertions, `tsc` clean, stdio smoke 41/41)
+
 ## Later (deliberately deferred — see Development Roadmap)
 
 - [ ] Semantic/embedding retrieval (only after baseline evaluation)
-- [ ] `debug_candidate_compare` standalone matrix tool (its purpose is currently served by duplicate warnings + the ranking in `debug_next_experiment_prepare`; add only if a workflow need emerges)
 - [ ] Research connectors beyond manual `debug_research_record`
 - [ ] Backup/restore + retention CLI; cross-project retrieval UI
 - [ ] AI model routing (explicitly deferred per the upgrade constraints)

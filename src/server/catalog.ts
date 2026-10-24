@@ -12,6 +12,7 @@ import { validationTools } from "./tools/validationTools.ts";
 import { metaTools } from "./tools/metaTools.ts";
 import { budgetTools } from "./tools/budgetTools.ts";
 import { nextActionTools } from "./tools/nextActionTools.ts";
+import { compareTools } from "./tools/compareTools.ts";
 
 /** All server tools, in a stable, grouped order. */
 export const ALL_TOOLS: Tool[] = [
@@ -25,6 +26,7 @@ export const ALL_TOOLS: Tool[] = [
   ...metaTools,
   ...budgetTools,
   ...nextActionTools,
+  ...compareTools,
 ];
 
 /** Build a callable catalog bound to a context (store, db path, logger). */
