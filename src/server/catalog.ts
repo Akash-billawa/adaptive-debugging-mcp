@@ -13,6 +13,7 @@ import { metaTools } from "./tools/metaTools.ts";
 import { budgetTools } from "./tools/budgetTools.ts";
 import { nextActionTools } from "./tools/nextActionTools.ts";
 import { compareTools } from "./tools/compareTools.ts";
+import { researchTools } from "./tools/researchTools.ts";
 
 /** All server tools, in a stable, grouped order. */
 export const ALL_TOOLS: Tool[] = [
@@ -27,6 +28,7 @@ export const ALL_TOOLS: Tool[] = [
   ...budgetTools,
   ...nextActionTools,
   ...compareTools,
+  ...researchTools,
 ];
 
 import { listResourceTemplates, readResourceHandler } from "./resources.ts";

@@ -90,9 +90,10 @@ try {
     "debug_case_start","debug_history_search","debug_case_read","debug_attempt_create",
     "debug_evidence_record","debug_attempt_update","debug_tree_read","debug_validation_record","debug_case_status_update",
     "debug_next_experiment_prepare","debug_budget_manage","debug_candidate_compare",
+    "debug_research_plan","debug_codebase_analyze","debug_research_evaluate",
   ];
   for (const r of required) check(`tool listed: ${r}`, names.includes(r));
-  check("18 tools registered", names.length === 18, names.length);
+  check("21 tools registered", names.length === 21, names.length);
 
   // 3) health (fresh db: zero records)
   const health0 = await callTool("debug_server_health", {}, 3);
@@ -262,6 +263,24 @@ try {
   check("prompts/get returns structured investigation message",
     Array.isArray(promptGet.result?.messages) && promptGet.result?.messages[0]?.content?.text?.includes("MANDATORY INVESTIGATION SEQUENCE"),
     promptGet.result);
+
+  // 20) debug_research_plan over real protocol
+  const researchPlan = await callTool("debug_research_plan", { incident_id: incidentId }, 29);
+  check("research_plan returns structured questions and sources",
+    researchPlan.structuredContent?.ok === true &&
+    Array.isArray(researchPlan.structuredContent?.plan?.questions) &&
+    researchPlan.structuredContent?.plan?.questions?.length > 0,
+    researchPlan.structuredContent);
+
+  // 21) debug_codebase_analyze over real protocol
+  const codebaseAnalyze = await callTool("debug_codebase_analyze", {
+    incident_id: incidentId,
+    analysis_type: "manifest_versions",
+  }, 30);
+  check("codebase_analyze returns manifest versions as untrusted data",
+    codebaseAnalyze.structuredContent?.ok === true &&
+    codebaseAnalyze.structuredContent?.finding?.untrusted_data === true,
+    codebaseAnalyze.structuredContent);
 
   console.log(`\nSMOKE RESULT: ${passed} passed, ${failed} failed`);
 } catch (e) {

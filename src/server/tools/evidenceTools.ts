@@ -1,9 +1,7 @@
 import type { Tool, ToolContext } from "../context.ts";
 import { str, objSchema, optStr, reqStr } from "../context.ts";
 import { validationError } from "../../errors.ts";
-import { isOneOf, EVIDENCE_TYPES } from "../../vocab.ts";
-
-const RESEARCH_TYPES = ["official_docs", "source_code", "changelog", "issue_tracker", "paper", "community", "ai_inference"] as const;
+import { isOneOf, EVIDENCE_TYPES, RESEARCH_TYPES } from "../../vocab.ts";
 
 export const evidenceTools: Tool[] = [
   {

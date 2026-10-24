@@ -131,10 +131,19 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] MCP Protocol capability advertisement and message dispatch for `resources/list`, `resources/read`, `prompts/list`, and `prompts/get`
 - [x] Protocol integration and stdio smoke verification (111 total tests / 485 assertions, `tsc` clean, stdio smoke 45/45)
 
+## Q. Technical Research Connectors & Codebase Analysis Helpers (v0.2.6) — DONE
+- [x] Research Planner engine (`src/research/planner.ts`): decomposes error signatures, live hypotheses, runtime environment, and failed attempts into prioritized, concrete research questions with recommended sources.
+- [x] Safe Codebase Analysis engine (`src/research/codebase.ts`): safe, read-only inspection of package manifests (`package.json`, `requirements.txt`, `pyproject.toml`, `Cargo.toml`), git commit log, git blame, git diff, and bounded file snippets with automatic secret redaction and untrusted-data markers.
+- [x] Multi-source Quality Evaluator (`src/research/evaluator.ts`): ranks candidate sources by authority, version compatibility, and symptom match, and detects contradictions across competing sources.
+- [x] MCP Tools registered (`src/server/tools/researchTools.ts`):
+  - `debug_research_plan`: generates structured research questions for an incident.
+  - `debug_codebase_analyze`: analyzes local codebase/git history and optionally records directly into `research_references`.
+  - `debug_research_evaluate`: evaluates candidate sources, ranks quality, and warns on contradictions.
+- [x] Regression & Protocol verification: 125 tests passing across 20 files, `tsc` clean, stdio smoke 50/50 passing with 21 MCP tools registered.
+
 ## Later (deliberately deferred — see Development Roadmap)
 
-- [ ] Semantic/embedding retrieval (only after baseline evaluation)
-- [ ] Research connectors beyond manual `debug_research_record`
+- [ ] Semantic/embedding retrieval (Hybrid FTS5 + vector similarity)
 - [ ] Cross-project visual retrieval UI / export dashboard
 - [ ] AI model routing (explicitly deferred per the upgrade constraints)
 - [ ] Live LLM-in-the-loop evaluation sessions (the harness covers the deterministic decision layer)

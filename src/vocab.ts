@@ -139,6 +139,18 @@ export const EVIDENCE_TYPES = [
 ] as const;
 export type EvidenceType = (typeof EVIDENCE_TYPES)[number];
 
+// --- Research source types ------------------------------------------------
+export const RESEARCH_TYPES = [
+  "official_docs",
+  "source_code",
+  "changelog",
+  "issue_tracker",
+  "paper",
+  "community",
+  "ai_inference",
+] as const;
+export type ResearchType = (typeof RESEARCH_TYPES)[number];
+
 // --- Redaction status -----------------------------------------------------
 export const REDACTION_STATUS = [
   "not_checked",
