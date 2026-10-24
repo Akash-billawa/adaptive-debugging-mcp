@@ -16,7 +16,11 @@
     "test:integration": "bun test tests/integration",
     "smoke": "bun run tests/smoke/stdio-smoke.ts",
     "plugin-smoke": "bun run tests/smoke/plugin-smoke.ts",
-    "obs-check": "bun run tests/smoke/obs-check.ts"
+    "obs-check": "bun run tests/smoke/obs-check.ts",
+    "db:backup": "bun run src/cli/backup.ts backup",
+    "db:verify": "bun run src/cli/backup.ts verify",
+    "db:restore": "bun run src/cli/backup.ts restore",
+    "db:prune": "bun run src/cli/backup.ts prune"
   },
   "engines": {
     "bun": ">=1.0.0"

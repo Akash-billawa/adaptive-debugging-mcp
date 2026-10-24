@@ -119,10 +119,16 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] Duplicate detection & prior failure cross-checking integrated into comparison
 - [x] Unit, integration, and stdio smoke tests (103 total tests / 421 assertions, `tsc` clean, stdio smoke 41/41)
 
+## O. Backup, restore, and retention management (v0.2.4) — DONE
+- [x] Storage engine utilities (`src/memory/backup.ts`): atomic WAL-checkpointed VACUUM INTO snapshots, SHA-256 manifests, integrity checks, pre-restore safety copies, and retention pruning with dry-run support
+- [x] Operational CLI (`src/cli/backup.ts`): subcommands `backup`, `verify`, `restore`, `prune` with automated exit code handling
+- [x] Package scripts registered: `db:backup`, `db:verify`, `db:restore`, `db:prune`
+- [x] Unit and integration regression suite (108 total tests / 454 assertions, `tsc` clean, stdio smoke 41/41)
+
 ## Later (deliberately deferred — see Development Roadmap)
 
 - [ ] Semantic/embedding retrieval (only after baseline evaluation)
 - [ ] Research connectors beyond manual `debug_research_record`
-- [ ] Backup/restore + retention CLI; cross-project retrieval UI
+- [ ] Cross-project visual retrieval UI / export dashboard
 - [ ] AI model routing (explicitly deferred per the upgrade constraints)
 - [ ] Live LLM-in-the-loop evaluation sessions (the harness covers the deterministic decision layer)

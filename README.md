@@ -41,10 +41,16 @@ opencode.jsonc.example
 
 ```powershell
 bun install
-bun test                    # 73 tests: unit, integration, and the 14-scenario adaptive evaluation
-bun run tests/smoke/stdio-smoke.ts   # full MCP lifecycle over stdio (31 checks, hermetic temp db)
+bun test                    # 108 tests: unit, integration, and the 14-scenario adaptive evaluation
+bun run tests/smoke/stdio-smoke.ts   # full MCP lifecycle over stdio (41 checks, hermetic temp db)
 bun run tests/smoke/obs-check.ts      # inspect live plugin observations in the default DB (alias: bun run obs-check)
 bun run src/server/index.ts --db "$env:TEMP\debug-memory.db"   # run the server manually
+
+# Storage & Maintenance operations
+bun run db:backup           # create atomic point-in-time snapshot with SHA-256 manifest
+bun run db:verify <path>    # verify integrity and checksum of a backup
+bun run db:restore <path>   # restore with pre-restore safety snapshot
+bun run db:prune --dry-run  # forecast transient observation/evidence retention pruning
 ```
 
 ## Register in OpenCode (v2)
