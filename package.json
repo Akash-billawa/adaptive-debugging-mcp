@@ -20,7 +20,8 @@
     "db:backup": "bun run src/cli/backup.ts backup",
     "db:verify": "bun run src/cli/backup.ts verify",
     "db:restore": "bun run src/cli/backup.ts restore",
-    "db:prune": "bun run src/cli/backup.ts prune"
+    "db:prune": "bun run src/cli/backup.ts prune",
+    "db:dashboard": "bun run src/cli/dashboard.ts"
   },
   "engines": {
     "bun": ">=1.0.0"

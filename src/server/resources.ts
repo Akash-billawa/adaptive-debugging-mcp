@@ -11,9 +11,28 @@
 import type { Store } from "../memory/store.ts";
 import type { ResourceDef } from "./protocol.ts";
 import { notFound, validationError } from "../errors.ts";
+import { generateDashboardHtml } from "../dashboard/generator.ts";
 
 export function listResourceTemplates(store: Store): ResourceDef[] {
   const templates: ResourceDef[] = [
+    {
+      uri: "debug://dashboard",
+      name: "Interactive Visual Dashboard",
+      description: "Self-contained interactive HTML visual dashboard across all debugging projects and incidents.",
+      mimeType: "text/html",
+    },
+    {
+      uri: "debug://project/{project_id}/dashboard",
+      name: "Project Visual Dashboard",
+      description: "Interactive HTML visual dashboard scoped to a specific project.",
+      mimeType: "text/html",
+    },
+    {
+      uri: "debug://incident/{incident_id}/dashboard",
+      name: "Incident Inspector Dashboard",
+      description: "Interactive HTML deep inspector and experiment tree for a specific incident.",
+      mimeType: "text/html",
+    },
     {
       uri: "debug://incident/{incident_id}/summary",
       name: "Incident Summary",
@@ -67,6 +86,26 @@ export function readResourceHandler(
   }
 
   const path = uri.slice("debug://".length);
+
+  // 0. Dashboard resources
+  if (path === "dashboard") {
+    const html = generateDashboardHtml(store);
+    return { contents: [{ uri, mimeType: "text/html", text: html }] };
+  }
+
+  const projectDashboardMatch = path.match(/^project\/([^/]+)\/dashboard$/);
+  if (projectDashboardMatch) {
+    const projectId = projectDashboardMatch[1];
+    const html = generateDashboardHtml(store, { projectId });
+    return { contents: [{ uri, mimeType: "text/html", text: html }] };
+  }
+
+  const incidentDashboardMatch = path.match(/^incident\/([^/]+)\/dashboard$/);
+  if (incidentDashboardMatch) {
+    const incidentId = incidentDashboardMatch[1];
+    const html = generateDashboardHtml(store, { incidentId });
+    return { contents: [{ uri, mimeType: "text/html", text: html }] };
+  }
 
   // 1. debug://incident/{id}/summary
   const summaryMatch = path.match(/^incident\/([^/]+)\/summary$/);

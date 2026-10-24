@@ -197,9 +197,11 @@ try {
   const read = await callTool("debug_case_read", { incident_id: incidentId, sections: ["attempts", "timeline", "validations"] }, 17);
   check("case_read returns attempts with observed+interpretation", Array.isArray(read.structuredContent?.attempts));
 
-  // 14) export
+  // 14) export (JSON and HTML visual dashboard)
   const exp = await callTool("debug_data_export", { incident_id: incidentId }, 18);
   check("export returns incident tree", exp.structuredContent?.incident?.incident_id === incidentId && Array.isArray(exp.structuredContent?.experiments));
+  const expHtml = await callTool("debug_data_export", { incident_id: incidentId, format: "html" }, 181);
+  check("export returns interactive visual dashboard html", expHtml.structuredContent?.format === "html" && typeof expHtml.structuredContent?.dashboard_html === "string");
 
   // 15) budget enforcement surfaces as a machine-readable MCP error over the REAL protocol
   // (catalog rethrows McpError; the stdio protocol layer converts it to an isError response)

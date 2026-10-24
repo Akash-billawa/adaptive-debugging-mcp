@@ -3,6 +3,9 @@ import { str, objSchema, optStr, reqStr } from "../context.ts";
 import { validationError } from "../../errors.ts";
 import { isOneOf, RELATIONSHIP_TYPES } from "../../vocab.ts";
 import { readSchemaVersion, SCHEMA_VERSION } from "../../memory/schema.ts";
+import { generateDashboardHtml } from "../../dashboard/generator.ts";
+import { writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 
 const REL_ENUM = [...RELATIONSHIP_TYPES];
 
@@ -47,13 +50,15 @@ export const metaTools: Tool[] = [
     def: {
       name: "debug_data_export",
       description:
-        "Export an incident or project history for backup/review/migration. Read-only. Redacts secrets and " +
-        "includes stable ids, relationships, and schema version.",
+        "Export an incident, project history, or cross-project visual dashboard for backup/review/migration. Read-only. " +
+        "Supports 'json' (data structure) or 'html' (standalone interactive visual dashboard) format.",
       inputSchema: objSchema(
         "Export data",
         {
           incident_id: str("Export this incident (with its tree, evidence metadata, validations, timeline)"),
-          project_id: str("Or export incident ids for this project"),
+          project_id: str("Or export incident ids / dashboard for this project"),
+          format: str("Export format ('json' or 'html')", { enum: ["json", "html"], default: "json" }),
+          out_file: str("Optional destination file path to write the exported JSON or HTML"),
         },
         [],
       ),
@@ -61,12 +66,45 @@ export const metaTools: Tool[] = [
     handle(ctx, args) {
       const incident_id = optStr(args, "incident_id");
       const project_id = optStr(args, "project_id");
+      const format = optStr(args, "format") ?? "json";
+      const out_file = optStr(args, "out_file");
+
+      if (format === "html") {
+        const html = generateDashboardHtml(ctx.store, {
+          projectId: project_id ?? undefined,
+          incidentId: incident_id ?? undefined,
+        });
+
+        if (out_file) {
+          mkdirSync(dirname(out_file), { recursive: true });
+          writeFileSync(out_file, html, "utf-8");
+          return {
+            ok: true,
+            format: "html",
+            out_file,
+            html_length: html.length,
+            summary: `Interactive visual dashboard exported successfully to ${out_file}`,
+          };
+        }
+
+        return {
+          ok: true,
+          format: "html",
+          html_length: html.length,
+          dashboard_html: html,
+          summary: "Interactive standalone visual dashboard generated successfully.",
+        };
+      }
+
       if (!incident_id && !project_id) throw validationError("provide incident_id or project_id");
       const now = new Date().toISOString();
 
+      let exportPayload: Record<string, unknown>;
+
       if (incident_id) {
         const inc = ctx.store.getIncidentOrFail(incident_id);
-        const payload = {
+        exportPayload = {
+          ok: true,
           schema_version: SCHEMA_VERSION,
           exported_at: now,
           incident: inc,
@@ -80,21 +118,33 @@ export const metaTools: Tool[] = [
           })),
           validations: ctx.store.listValidations(incident_id),
           research: ctx.store.listResearch(incident_id),
+          warnings: ["raw_evidence_content_is_redacted_and_bounded"],
         };
-        return { ok: true, ...payload, warnings: ["raw_evidence_content_is_redacted_and_bounded"] };
+      } else {
+        const incidents = ctx.store.db
+          .query("SELECT incident_id FROM incidents WHERE project_id = ? ORDER BY created_at ASC")
+          .all(project_id!) as { incident_id: string }[];
+        exportPayload = {
+          ok: true,
+          schema_version: SCHEMA_VERSION,
+          exported_at: now,
+          project_id,
+          incidents: incidents.map((i) => i.incident_id),
+          warnings: ["raw_evidence_content_is_redacted_and_bounded"],
+        };
       }
 
-      const incidents = ctx.store.db
-        .query("SELECT incident_id FROM incidents WHERE project_id = ? ORDER BY created_at ASC")
-        .all(project_id!) as { incident_id: string }[];
-      return {
-        ok: true,
-        schema_version: SCHEMA_VERSION,
-        exported_at: now,
-        project_id,
-        incidents: incidents.map((i) => i.incident_id),
-        warnings: ["raw_evidence_content_is_redacted_and_bounded"],
-      };
+      if (out_file) {
+        mkdirSync(dirname(out_file), { recursive: true });
+        writeFileSync(out_file, JSON.stringify(exportPayload, null, 2), "utf-8");
+        return {
+          ...exportPayload,
+          out_file,
+          summary: `JSON export written successfully to ${out_file}`,
+        };
+      }
+
+      return exportPayload;
     },
   },
 

@@ -174,6 +174,10 @@ export class Store {
     return this.db.query("SELECT * FROM projects WHERE project_id = ?").get(id) as unknown as Project | null;
   }
 
+  listProjects(): Project[] {
+    return this.db.query("SELECT * FROM projects ORDER BY updated_at DESC").all() as unknown as Project[];
+  }
+
   // --- Incidents -----------------------------------------------------------
   createIncident(input: CreateIncidentInput): { incident: Incident; project: Project; related: Incident[] } {
     if (input.idempotency_key) {

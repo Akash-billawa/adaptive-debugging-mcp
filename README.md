@@ -100,11 +100,16 @@ In Code Mode the tools appear as `tools["adaptive-debug-memory"].<tool>` (18 too
 | `debug_validation_record` | Acceptance-criteria validation; the only path to `verified` |
 | `debug_case_status_update` | Lifecycle transitions (requires qualifying validation for `resolved`) |
 
-**Supporting:** `debug_hypothesis_manage`, `debug_research_record`, `debug_timeline_read`, `debug_case_link`, `debug_data_export`, `debug_server_health`.
+**Supporting:** `debug_hypothesis_manage`, `debug_research_record`, `debug_timeline_read`, `debug_case_link`, `debug_data_export` (supports `format: "html" | "json"` for interactive visual dashboards), `debug_server_health`.
 
 > **Argument-name note (`debug_hypothesis_manage`):** the field carrying a hypothesis is canonically **`statement`** (matching the store, the `Hypothesis` type and the `hypotheses.statement` column), alongside `rationale`. Agents have been observed sending `hypothesis` or `testable_claim` instead; the tool accepts those as backward-compatible aliases, prefers `statement` when both are present, and discloses in its response which name supplied the text (`statement_normalized_from`). The per-op required fields are listed in the tool's published description.
 
-**Adaptive decision & comparison layer (v0.2+):** `debug_next_experiment_prepare` — assesses exhaustion, reports budget usage, ranks refinement candidates with explained heuristic factors (not probabilities), and recommends exactly ONE next action; `debug_budget_manage` — view effective config/usage/next-experiment probe, set project defaults or per-incident overrides; `debug_candidate_compare` — standalone candidate comparison matrix evaluating shared/diverging hypotheses, variable deltas, action overlap, prior evidence, risk, and near-duplicate warnings. 18 tools total.
+**Adaptive decision, research, semantic & visual layer (v0.2.8):**
+- **Decision Engine:** `debug_next_experiment_prepare` (recommends exactly ONE next action), `debug_budget_manage` (view/override experiment budgets), `debug_candidate_compare` (side-by-side proposal comparison matrix).
+- **Technical Research:** `debug_research_plan` (structured questions & sources), `debug_codebase_analyze` (safe manifest & git blame/diff inspection), `debug_research_evaluate` (source ranking & contradiction detection).
+- **Semantic Retrieval:** `debug_history_search` (hybrid exact fingerprint + FTS5 BM25 + dense vector similarity), `debug_semantic_index` (vector synchronization).
+- **Visual Dashboard & Export:** Standalone interactive HTML visual dashboard via `bun run db:dashboard`, `debug_data_export (format='html')`, or `debug://dashboard` MCP resource.
+- **22 tools total**, with full MCP Resources (`debug://...`) and canonical prompt workflows (`debug_investigate_incident`, `debug_formulate_hypotheses`, `debug_plan_next_experiment`, `debug_verify_resolution`, `debug_review_exhaustion`).
 
 Errors use machine-readable categories: `VALIDATION_ERROR`, `NOT_FOUND`, `CONFLICT`, `STORAGE_ERROR`, `LIMIT_EXCEEDED`, … (see `src/errors.ts`).
 

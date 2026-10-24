@@ -151,8 +151,25 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
   - `debug_semantic_index`: inspects and synchronizes vector embeddings.
 - [x] Protocol & regression verification: 134 tests passing across 23 files, `tsc` clean, stdio smoke 52/52 passing with 22 MCP tools registered.
 
+## S. Cross-Project Visual Retrieval UI & Standalone Export Dashboard (v0.2.8) — DONE
+- [x] Core standalone dashboard generator (`src/dashboard/generator.ts`): renders zero-dependency, self-contained HTML/CSS/JS with embedded JSON data, print-ready CSS media queries, and sanitization defense.
+- [x] Rich UI design aesthetics & panels:
+  - Cross-project KPI overview metrics (total incidents, verified resolution %, active bugs, total experiments, hypotheses count).
+  - Multi-project switcher dropdown and live instant client-side table filter.
+  - Deep Incident Inspector with hierarchical experiment branching tree, outcome status badges (`verified`, `candidate`, `failed`, `inconclusive`, `blocked`, `superseded`).
+  - Competing hypotheses matrix with plausibility bars and test strategies.
+  - Chronological event timeline and audit trail.
+  - Evidence Vault with syntax terminal window, stdout/stderr differentiation, and highlighted `[REDACTED:...]` badges.
+  - External research citations with authority scores and contradiction warnings.
+  - Interactive semantic & hybrid retrieval playground with explainable score attribution.
+- [x] Multi-surface access:
+  - CLI command (`src/cli/dashboard.ts` and `npm run db:dashboard`): options `--db`, `--out`, `--project`, `--incident`, `--title`, `--open`.
+  - MCP Tool (`src/server/tools/metaTools.ts`): enhanced `debug_data_export` with `format: "html" | "json"` and `out_file` parameter.
+  - MCP Resources (`src/server/resources.ts`): registered `debug://dashboard`, `debug://project/{project_id}/dashboard`, and `debug://incident/{incident_id}/dashboard` (`text/html`).
+- [x] Protocol & regression verification: 138 tests passing across 25 files, `tsc` clean, stdio smoke 53/53 passing with 22 MCP tools registered.
+
 ## Later (deliberately deferred — see Development Roadmap)
 
-- [ ] Cross-project visual retrieval UI / export dashboard
+- [x] Cross-project visual retrieval UI / export dashboard (Completed in v0.2.8)
 - [ ] AI model routing (explicitly deferred per the upgrade constraints)
 - [ ] Live LLM-in-the-loop evaluation sessions (the harness covers the deterministic decision layer)
