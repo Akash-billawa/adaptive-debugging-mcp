@@ -125,6 +125,12 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
 - [x] Package scripts registered: `db:backup`, `db:verify`, `db:restore`, `db:prune`
 - [x] Unit and integration regression suite (108 total tests / 454 assertions, `tsc` clean, stdio smoke 41/41)
 
+## P. MCP Resources & Prompts surface (v0.2.5) — DONE
+- [x] Read-only `debug://` resources (`src/server/resources.ts`): templates and dynamic URIs for incident summary (`debug://incident/{id}/summary`), tree (`debug://incident/{id}/tree`), attempt evidence (`debug://attempt/{id}/evidence`), and project recent (`debug://project/{id}/recent`)
+- [x] Reusable prompts catalog (`src/server/prompts.ts`): 5 canonical debugging prompts (`debug_investigate_failure`, `debug_resume_investigation`, `debug_review_failures`, `debug_prepare_variant`, `debug_verify_fix`)
+- [x] MCP Protocol capability advertisement and message dispatch for `resources/list`, `resources/read`, `prompts/list`, and `prompts/get`
+- [x] Protocol integration and stdio smoke verification (111 total tests / 485 assertions, `tsc` clean, stdio smoke 45/45)
+
 ## Later (deliberately deferred — see Development Roadmap)
 
 - [ ] Semantic/embedding retrieval (only after baseline evaluation)

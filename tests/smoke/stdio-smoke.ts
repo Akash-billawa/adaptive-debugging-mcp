@@ -75,7 +75,11 @@ try {
   // 1) initialize
   rpcWrite({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "0" } } });
   const init = await readResponse(1);
-  check("initialize returns serverInfo", init.result?.serverInfo?.name === "adaptive-debugging-mcp", init.result);
+  check("initialize returns serverInfo and full capabilities",
+    init.result?.serverInfo?.name === "adaptive-debugging-mcp" &&
+    init.result?.capabilities?.resources !== undefined &&
+    init.result?.capabilities?.prompts !== undefined,
+    init.result);
   rpcWrite({ jsonrpc: "2.0", method: "notifications/initialized" });
 
   // 2) tools/list complete with all tools present
@@ -232,6 +236,32 @@ try {
     Array.isArray(compare.structuredContent?.pairwise_comparisons) &&
     Array.isArray(compare.structuredContent?.recommended_order),
     compare.structuredContent);
+
+  // 18) resources/list and resources/read over real protocol
+  rpcWrite({ jsonrpc: "2.0", id: 25, method: "resources/list" });
+  const resList = await readResponse(25);
+  check("resources/list returns templates and active incident",
+    Array.isArray(resList.result?.resources) && resList.result?.resources?.length >= 4,
+    resList.result);
+
+  rpcWrite({ jsonrpc: "2.0", id: 26, method: "resources/read", params: { uri: `debug://incident/${incidentId}/summary` } });
+  const resRead = await readResponse(26);
+  check("resources/read returns incident summary text",
+    Array.isArray(resRead.result?.contents) && typeof resRead.result?.contents[0]?.text === "string",
+    resRead.result);
+
+  // 19) prompts/list and prompts/get over real protocol
+  rpcWrite({ jsonrpc: "2.0", id: 27, method: "prompts/list" });
+  const promptList = await readResponse(27);
+  check("prompts/list returns 5 canonical debugging prompts",
+    Array.isArray(promptList.result?.prompts) && promptList.result?.prompts?.length === 5,
+    promptList.result);
+
+  rpcWrite({ jsonrpc: "2.0", id: 28, method: "prompts/get", params: { name: "debug_investigate_failure", arguments: { incident_id: incidentId } } });
+  const promptGet = await readResponse(28);
+  check("prompts/get returns structured investigation message",
+    Array.isArray(promptGet.result?.messages) && promptGet.result?.messages[0]?.content?.text?.includes("MANDATORY INVESTIGATION SEQUENCE"),
+    promptGet.result);
 
   console.log(`\nSMOKE RESULT: ${passed} passed, ${failed} failed`);
 } catch (e) {

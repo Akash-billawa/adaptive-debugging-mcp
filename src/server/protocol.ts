@@ -29,6 +29,25 @@ export interface ToolDef {
   inputSchema: JsonSchema;
 }
 
+export interface ResourceDef {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface PromptArgumentDef {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+export interface PromptDef {
+  name: string;
+  description?: string;
+  arguments?: PromptArgumentDef[];
+}
+
 export interface ToolResult {
   content: { type: "text"; text: string }[];
   structuredContent: Record<string, unknown>;
@@ -39,6 +58,10 @@ export interface ToolResult {
 export interface ToolCatalog {
   list(): ToolDef[];
   call(name: string, args: Record<string, unknown>): Promise<ToolResult>;
+  listResources?(): ResourceDef[];
+  readResource?(uri: string): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> | { contents: Array<{ uri: string; mimeType: string; text: string }> };
+  listPrompts?(): PromptDef[];
+  getPrompt?(name: string, args: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text: string } }> }> | { description?: string; messages: Array<{ role: string; content: { type: string; text: string } }> };
 }
 
 interface RpcRequest {
@@ -89,7 +112,11 @@ export async function handleMessage(
         : SUPPORTED_PROTOCOL_VERSIONS[0];
       return ok(id, {
         protocolVersion: version,
-        capabilities: { tools: {} },
+        capabilities: {
+          tools: {},
+          resources: {},
+          prompts: {},
+        },
         serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
       });
     }
@@ -122,13 +149,34 @@ export async function handleMessage(
     }
 
     case "resources/list":
-      return ok(id, { resources: [] });
+      return ok(id, { resources: catalog.listResources ? catalog.listResources() : [] });
+
+    case "resources/read": {
+      const params = (req.params ?? {}) as { uri?: string };
+      if (!params.uri) return err(id, INVALID_PARAMS, "resources/read requires a 'uri' parameter");
+      if (!catalog.readResource) return err(id, METHOD_NOT_FOUND, "resources are not supported");
+      try {
+        const result = await catalog.readResource(params.uri);
+        return ok(id, result);
+      } catch (e: any) {
+        return err(id, -32002, e.message ?? "Resource not found", { uri: params.uri });
+      }
+    }
+
     case "prompts/list":
-      return ok(id, { prompts: [] });
-    case "resources/read":
-      return err(id, METHOD_NOT_FOUND, "resources are not exposed by this server", { data: "read-only resources are out of MVP scope" });
-    case "prompts/get":
-      return err(id, METHOD_NOT_FOUND, "prompts are not exposed by this server");
+      return ok(id, { prompts: catalog.listPrompts ? catalog.listPrompts() : [] });
+
+    case "prompts/get": {
+      const params = (req.params ?? {}) as { name?: string; arguments?: Record<string, string> };
+      if (!params.name) return err(id, INVALID_PARAMS, "prompts/get requires a 'name' parameter");
+      if (!catalog.getPrompt) return err(id, METHOD_NOT_FOUND, "prompts are not supported");
+      try {
+        const result = await catalog.getPrompt(params.name, params.arguments ?? {});
+        return ok(id, result);
+      } catch (e: any) {
+        return err(id, -32002, e.message ?? "Prompt error", { name: params.name });
+      }
+    }
 
     default:
       if (isNotification) return null; // unknown notifications are ignored

@@ -1,0 +1,156 @@
+/**
+ * MCP Read-Only Resources surface (Tool Catalogue §7.1).
+ *
+ * Exposes read-only `debug://` resources for presenting existing investigation state:
+ * - `debug://incident/{incident_id}/summary`
+ * - `debug://incident/{incident_id}/tree`
+ * - `debug://attempt/{attempt_id}/evidence`
+ * - `debug://project/{project_id}/recent`
+ */
+
+import type { Store } from "../memory/store.ts";
+import type { ResourceDef } from "./protocol.ts";
+import { notFound, validationError } from "../errors.ts";
+
+export function listResourceTemplates(store: Store): ResourceDef[] {
+  const templates: ResourceDef[] = [
+    {
+      uri: "debug://incident/{incident_id}/summary",
+      name: "Incident Summary",
+      description: "Authoritative incident summary with explicit uncertainty, symptoms, status, and open hypotheses.",
+      mimeType: "application/json",
+    },
+    {
+      uri: "debug://incident/{incident_id}/tree",
+      name: "Experiment Tree",
+      description: "Nested strategy and experiment branch tree with outcomes and truncation disclosure.",
+      mimeType: "application/json",
+    },
+    {
+      uri: "debug://attempt/{attempt_id}/evidence",
+      name: "Attempt Evidence",
+      description: "Attached evidence references, observations, and interpretations for a specific experiment node.",
+      mimeType: "application/json",
+    },
+    {
+      uri: "debug://project/{project_id}/recent",
+      name: "Recent Project Incidents",
+      description: "Recent investigations and current unresolved incidents for a given project.",
+      mimeType: "application/json",
+    },
+  ];
+
+  // Dynamically expose active incidents for direct discovery in IDE resource lists
+  try {
+    const active = store.db.query("SELECT incident_id, title FROM incidents ORDER BY updated_at DESC LIMIT 15").all() as Array<{ incident_id: string; title: string }>;
+    for (const inc of active) {
+      templates.push({
+        uri: `debug://incident/${inc.incident_id}/summary`,
+        name: `Incident: ${inc.title.slice(0, 50)}`,
+        description: `Current summary for incident ${inc.incident_id}`,
+        mimeType: "application/json",
+      });
+    }
+  } catch {
+    /* ignore if DB is not yet populated */
+  }
+
+  return templates;
+}
+
+export function readResourceHandler(
+  store: Store,
+  uri: string,
+): { contents: Array<{ uri: string; mimeType: string; text: string }> } {
+  if (!uri.startsWith("debug://")) {
+    throw validationError(`Unsupported resource URI scheme: ${uri}. Expected 'debug://...'`);
+  }
+
+  const path = uri.slice("debug://".length);
+
+  // 1. debug://incident/{id}/summary
+  const summaryMatch = path.match(/^incident\/([^/]+)\/summary$/);
+  if (summaryMatch) {
+    const incidentId = summaryMatch[1];
+    const incident = store.getIncident(incidentId);
+    if (!incident) throw notFound(`Incident not found: ${incidentId}`);
+
+    const hypotheses = store.listHypotheses(incidentId);
+    const validations = store.listValidations(incidentId);
+    const experiments = store.allExperiments(incidentId);
+
+    const payload = {
+      incident,
+      hypotheses_count: hypotheses.length,
+      hypotheses: hypotheses.map((h) => ({ id: h.hypothesis_id, statement: h.statement, status: h.status })),
+      experiments_count: experiments.length,
+      outcomes_breakdown: experiments.reduce((acc, e) => {
+        acc[e.outcome_status] = (acc[e.outcome_status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>),
+      validations_count: validations.length,
+      recent_validations: validations.slice(0, 5),
+    };
+
+    return {
+      contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+
+  // 2. debug://incident/{id}/tree
+  const treeMatch = path.match(/^incident\/([^/]+)\/tree$/);
+  if (treeMatch) {
+    const incidentId = treeMatch[1];
+    const tree = store.buildTree(incidentId, null, 8);
+    const payload = {
+      incident_id: incidentId,
+      total_nodes: tree.total,
+      tree: tree.nodes,
+    };
+
+    return {
+      contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+
+  // 3. debug://attempt/{id}/evidence
+  const attemptMatch = path.match(/^attempt\/([^/]+)\/evidence$/);
+  if (attemptMatch) {
+    const attemptId = attemptMatch[1];
+    const expRow = store.db.query("SELECT * FROM experiments WHERE experiment_id = ?").get(attemptId) as Record<string, unknown> | null;
+    if (!expRow) throw notFound(`Experiment attempt not found: ${attemptId}`);
+
+    const evidence = store.listEvidence({ experiment_id: attemptId });
+
+    const payload = {
+      experiment: expRow,
+      evidence_count: evidence.length,
+      evidence,
+    };
+
+    return {
+      contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+
+  // 4. debug://project/{id}/recent
+  const projectMatch = path.match(/^project\/([^/]+)\/recent$/);
+  if (projectMatch) {
+    const projectId = projectMatch[1];
+    const incidents = store.db.query(
+      "SELECT * FROM incidents WHERE project_id = ? ORDER BY updated_at DESC LIMIT 20",
+    ).all(projectId) as Array<Record<string, unknown>>;
+
+    const payload = {
+      project_id: projectId,
+      total_recent: incidents.length,
+      incidents,
+    };
+
+    return {
+      contents: [{ uri, mimeType: "application/json", text: JSON.stringify(payload, null, 2) }],
+    };
+  }
+
+  throw validationError(`Unknown resource URI: ${uri}`);
+}

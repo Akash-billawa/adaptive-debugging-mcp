@@ -29,6 +29,9 @@ export const ALL_TOOLS: Tool[] = [
   ...compareTools,
 ];
 
+import { listResourceTemplates, readResourceHandler } from "./resources.ts";
+import { listPromptsCatalog, getPromptHandler } from "./prompts.ts";
+
 /** Build a callable catalog bound to a context (store, db path, logger). */
 export function buildCatalog(ctx: ToolContext): ToolCatalog {
   const byName = new Map<string, Tool>();
@@ -55,6 +58,18 @@ export function buildCatalog(ctx: ToolContext): ToolCatalog {
         structuredContent: payload,
         isError: false,
       };
+    },
+    listResources() {
+      return listResourceTemplates(ctx.store);
+    },
+    readResource(uri: string) {
+      return readResourceHandler(ctx.store, uri);
+    },
+    listPrompts() {
+      return listPromptsCatalog();
+    },
+    getPrompt(name: string, args: Record<string, string>) {
+      return getPromptHandler(ctx.store, name, args);
     },
   };
 }
