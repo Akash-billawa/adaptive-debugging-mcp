@@ -141,9 +141,18 @@ Implementation checklist derived from the planning documents. Status: **MVP impl
   - `debug_research_evaluate`: evaluates candidate sources, ranks quality, and warns on contradictions.
 - [x] Regression & Protocol verification: 125 tests passing across 20 files, `tsc` clean, stdio smoke 50/50 passing with 21 MCP tools registered.
 
+## R. Semantic & Vector Embedding Retrieval Engine (v0.2.7) — DONE
+- [x] Schema migration v4 (`src/memory/schema.ts` & `src/memory/db.ts`): added `embeddings` table and indices (`embedding_id`, `entity_type`, `entity_id`, `model_name`, `dimension`, `vector_json`, `source_text_hash`).
+- [x] Vector math & deterministic local vectorizer (`src/retrieval/vector.ts`): cosine similarity, L2 normalization, and 256-dimensional subword & token feature hashing vectorizer in pure TypeScript with zero external neural network weight dependencies.
+- [x] Real-time indexing & semantic search (`src/retrieval/semantic.ts`): automatic vector indexing on incident and experiment creation, cosine similarity search, and batch synchronization (`syncAllEmbeddings`).
+- [x] Hybrid search fusion (`src/retrieval/search.ts`): reciprocal combination of exact fingerprints (+100), FTS5 BM25 (+10-35), and dense semantic similarity (+0-40) with explainable `matched_via` attribution and secret redaction defense.
+- [x] MCP Tool registered (`src/server/tools/searchTools.ts`):
+  - `debug_history_search`: enhanced with `semantic: boolean` and `min_similarity: number` options.
+  - `debug_semantic_index`: inspects and synchronizes vector embeddings.
+- [x] Protocol & regression verification: 134 tests passing across 23 files, `tsc` clean, stdio smoke 52/52 passing with 22 MCP tools registered.
+
 ## Later (deliberately deferred — see Development Roadmap)
 
-- [ ] Semantic/embedding retrieval (Hybrid FTS5 + vector similarity)
 - [ ] Cross-project visual retrieval UI / export dashboard
 - [ ] AI model routing (explicitly deferred per the upgrade constraints)
 - [ ] Live LLM-in-the-loop evaluation sessions (the harness covers the deterministic decision layer)

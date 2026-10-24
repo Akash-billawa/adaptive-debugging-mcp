@@ -16,6 +16,7 @@ const TYPES: Record<string, string> = {
   event: "evt",
   link: "lnk",
   approval: "apr",
+  embedding: "emb",
 };
 
 function randomBase36(len: number): string {
@@ -48,6 +49,7 @@ export const ids = {
   event: () => newId("event"),
   link: () => newId("link"),
   approval: () => newId("approval"),
+  embedding: () => newId("embedding"),
 };
 
 /** Content hash (non-cryptographic integrity check). Returns a numeric string. */

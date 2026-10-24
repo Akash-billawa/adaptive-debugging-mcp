@@ -75,6 +75,26 @@ const MIGRATIONS: Migration[] = [
       );
     },
   },
+  {
+    version: 4,
+    up: (db) => {
+      // Dense vector similarity for hybrid retrieval (v4).
+      db.run(`CREATE TABLE IF NOT EXISTS embeddings (
+        embedding_id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        model_name TEXT NOT NULL,
+        dimension INTEGER NOT NULL,
+        vector_json TEXT NOT NULL,
+        source_text_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`);
+      db.run(
+        `CREATE UNIQUE INDEX IF NOT EXISTS idx_embeddings_entity ON embeddings(entity_type, entity_id, model_name)`,
+      );
+      db.run(`CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model_name)`);
+    },
+  },
 ];
 
 /** Apply any pending migrations. */

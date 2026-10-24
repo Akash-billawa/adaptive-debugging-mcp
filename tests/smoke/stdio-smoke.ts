@@ -90,10 +90,10 @@ try {
     "debug_case_start","debug_history_search","debug_case_read","debug_attempt_create",
     "debug_evidence_record","debug_attempt_update","debug_tree_read","debug_validation_record","debug_case_status_update",
     "debug_next_experiment_prepare","debug_budget_manage","debug_candidate_compare",
-    "debug_research_plan","debug_codebase_analyze","debug_research_evaluate",
+    "debug_research_plan","debug_codebase_analyze","debug_research_evaluate","debug_semantic_index",
   ];
   for (const r of required) check(`tool listed: ${r}`, names.includes(r));
-  check("21 tools registered", names.length === 21, names.length);
+  check("22 tools registered", names.length === 22, names.length);
 
   // 3) health (fresh db: zero records)
   const health0 = await callTool("debug_server_health", {}, 3);
@@ -281,6 +281,13 @@ try {
     codebaseAnalyze.structuredContent?.ok === true &&
     codebaseAnalyze.structuredContent?.finding?.untrusted_data === true,
     codebaseAnalyze.structuredContent);
+
+  // 22) debug_semantic_index over real protocol
+  const semanticIndex = await callTool("debug_semantic_index", {}, 31);
+  check("semantic_index returns synchronized embedding stats",
+    semanticIndex.structuredContent?.ok === true &&
+    typeof semanticIndex.structuredContent?.stats?.total_embeddings === "number",
+    semanticIndex.structuredContent);
 
   console.log(`\nSMOKE RESULT: ${passed} passed, ${failed} failed`);
 } catch (e) {

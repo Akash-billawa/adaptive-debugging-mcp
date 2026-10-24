@@ -9,7 +9,7 @@ import type { Database } from "bun:sqlite";
  * semantic search is deliberately deferred.
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const DDL: string[] = [
   `CREATE TABLE IF NOT EXISTS meta (
@@ -306,6 +306,20 @@ const DDL: string[] = [
      body,
      tokenize = 'porter unicode61'
    )`,
+
+  // --- Vector embeddings (v4) ---
+  `CREATE TABLE IF NOT EXISTS embeddings (
+     embedding_id TEXT PRIMARY KEY,
+     entity_type TEXT NOT NULL,
+     entity_id TEXT NOT NULL,
+     model_name TEXT NOT NULL,
+     dimension INTEGER NOT NULL,
+     vector_json TEXT NOT NULL,
+     source_text_hash TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_embeddings_entity ON embeddings(entity_type, entity_id, model_name)`,
+  `CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model_name)`,
 ];
 
 /** Create the full schema (idempotent) and stamp the schema version.

@@ -192,7 +192,7 @@ test("migration v2 -> v3 is additive and preserves records across restarts", () 
     expect(store.allExperiments(incidentId).length).toBe(1);
     const hasBudgets = store.db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='budgets'").get();
     expect(!!hasBudgets).toBe(true);
-    expect((store.db.query("SELECT value FROM meta WHERE key='schema_version'").get() as any).value).toBe("3");
+    expect(Number((store.db.query("SELECT value FROM meta WHERE key='schema_version'").get() as any).value)).toBeGreaterThanOrEqual(3);
     // Budget rows now persist across restarts
     store.setBudgetConfig({ scope: "project", project_id: "prj_m", incident_id: null, config: { max_total_experiments: 10 }, actor: "user" });
     closeStore(store);
@@ -200,7 +200,7 @@ test("migration v2 -> v3 is additive and preserves records across restarts", () 
   // Phase 3: another restart -> no re-migration, budget row survives, records intact
   {
     const store = openStore(p);
-    expect((store.db.query("SELECT value FROM meta WHERE key='schema_version'").get() as any).value).toBe("3");
+    expect(Number((store.db.query("SELECT value FROM meta WHERE key='schema_version'").get() as any).value)).toBeGreaterThanOrEqual(3);
     expect(store.getProjectBudgetDefault("prj_m").max_total_experiments).toBe(10);
     expect(store.allExperiments(incidentId).length).toBe(1);
     closeStore(store);

@@ -520,8 +520,8 @@ test("multi-session check detects work from concurrent sessions and prevents dup
 // ---------------------------------------------------------------------------
 // 7. Existing MCP tool contracts remain compatible
 // ---------------------------------------------------------------------------
-test("all 21 MCP tools remain registered with backward-compatible schemas", () => {
-  expect(ALL_TOOLS.length).toBe(21);
+test("all 22 MCP tools remain registered with backward-compatible schemas", () => {
+  expect(ALL_TOOLS.length).toBe(22);
   const toolNames = ALL_TOOLS.map((t) => t.def.name);
   const required = [
     "debug_case_start",
@@ -545,6 +545,7 @@ test("all 21 MCP tools remain registered with backward-compatible schemas", () =
     "debug_research_plan",
     "debug_codebase_analyze",
     "debug_research_evaluate",
+    "debug_semantic_index",
   ];
   for (const name of required) {
     expect(toolNames).toContain(name);

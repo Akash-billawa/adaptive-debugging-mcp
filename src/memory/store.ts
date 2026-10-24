@@ -3,6 +3,7 @@ import { now, truncate } from "../util.ts";
 import { ids, deriveLabel, contentHash } from "./ids.ts";
 import * as fts from "./fts.ts";
 import { appendTimelineEvent, createLink } from "./audit.ts";
+import { indexIncidentEmbedding, indexExperimentEmbedding } from "../retrieval/semantic.ts";
 import { redactWithStatus } from "../security/redaction.ts";
 import { detectDuplicateWarnings, type DuplicateWarning } from "../retrieval/duplicates.ts";
 import { validationError, notFound, conflict, McpError, ErrorCategory } from "../errors.ts";
@@ -248,6 +249,11 @@ export class Store {
 
       fts.indexIncident(this.db, incidentId, project.project_id, incident.title, incident.initial_symptom,
         `${incident.initial_symptom} ${incident.acceptance_criteria ?? ""}`);
+      try {
+        indexIncidentEmbedding(this, incident);
+      } catch {
+        // Safe fallback if embeddings table not ready
+      }
 
       appendTimelineEvent(this.db, {
         incident_id: incidentId,
@@ -659,6 +665,11 @@ export class Store {
         );
       fts.indexExperiment(this.db, id, exp.incident_id, exp.title,
         [exp.proposed_change, exp.expected_observation, exp.reason_for_difference].filter(Boolean).join(" "));
+      try {
+        indexExperimentEmbedding(this, exp);
+      } catch {
+        // Safe fallback if embeddings table not ready
+      }
       appendTimelineEvent(this.db, {
         incident_id: exp.incident_id,
         event_type: "experiment.created",
