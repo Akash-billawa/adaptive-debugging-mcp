@@ -181,45 +181,40 @@ mindmap
 ### Cognitive State Loop
 
 ```mermaid
-flowchart TD
-    A["🔴 Incident Intake<br/>& Error Signature"] --> B["🔍 Hybrid Search<br/>FTS5 + Dense Vectors"]
-    B --> C{"Prior Fix Found<br/>in Memory?"}
+graph TD
+    A[🔴 Incident Intake<br>Error Signatures] --> B[🔍 Hybrid Search<br>Memory & History]
+    B --> C{📁 Prior Fix Found?}
     
-    C -->|High Match| D["🧪 Targeted Repro<br/>& Quick Validation"]
-    C -->|Novel Bug| E["🧠 Competing Causes<br/>2+ Hypotheses"]
+    C -->|No| E[🔀 Competing Causes<br>Hypothesis Manager]
+    C -->|Yes| M[🛡️ Acceptance Run<br>Validation Criteria]
     
-    E --> F["📚 Tech Research<br/>Manifest & Blame"]
-    F --> G["🎯 Adaptive Engine<br/>Rank Candidates"]
-    G --> H["🌳 Branch Variant<br/>Node A1 / A1A"]
-    H --> I["⚙️ Controlled Attempt<br/>Host Execution"]
-    I --> J["📡 Raw Telemetry<br/>Redacted Evidence"]
+    E --> F[🌐 Tech Research<br>Docs & Manifests]
+    F --> G[🧠 Adaptive Engine<br>Score & Plan Step]
+    G --> H[🌿 Branch Variant<br>Node A1 / A1A]
+    H --> I[⚡ Controlled Attempt<br>Host Execution]
+    I --> J[📊 Raw Telemetry<br>Redacted Evidence]
     
-    J --> K{"Observed<br/>Outcome?"}
-    K -->|Failed / Partial| L["📊 Update Evidence<br/>& Exhaustion"]
+    J --> K{Observed Outcome?}
+    K -->|Failed / Partial| L[📈 Update Exhaustion<br>& Refine Candidates]
     L --> G
     
-    K -->|Candidate Fix| M["🛡️ Acceptance Run<br/>Validation Criteria"]
+    K -->|Candidate Fix| M
+    M -->|Validation Passed| N[✅ Immutable Verified<br>Case Resolved]
     M -->|Validation Failed| L
-    M -->|Validation Passed| N["✅ Immutable Verified<br/>Case Resolved"]
 
-    classDef default fill:#181825,stroke:#45475a,stroke-width:1.5px,color:#cdd6f4;
-    classDef intake fill:#1e1e2e,stroke:#f38ba8,stroke-width:2px,color:#fff;
-    classDef search fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#fff;
-    classDef hypo fill:#1e1e2e,stroke:#cba6f7,stroke-width:2px,color:#fff;
-    classDef engine fill:#1e1e2e,stroke:#fab387,stroke-width:2px,color:#fff;
-    classDef branch fill:#1e1e2e,stroke:#f9e2af,stroke-width:2px,color:#fff;
-    classDef decision fill:#1e1e2e,stroke:#fab387,stroke-width:2px,color:#fff;
-    classDef validation fill:#1e1e2e,stroke:#a6e3a1,stroke-width:2px,color:#fff;
-    classDef verified fill:#14342b,stroke:#94e2d5,stroke-width:3px,color:#fff;
-
-    class A intake;
-    class B search;
-    class C,K decision;
-    class E hypo;
-    class G engine;
-    class H branch;
-    class M validation;
-    class N verified;
+    style A fill:#1e1e2e,stroke:#f38ba8,stroke-width:2px,color:#fff
+    style B fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#fff
+    style C fill:#1e1e2e,stroke:#f9e2af,stroke-width:2px,color:#fff
+    style E fill:#1e1e2e,stroke:#cba6f7,stroke-width:2px,color:#fff
+    style F fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#fff
+    style G fill:#1e1e2e,stroke:#fab387,stroke-width:2px,color:#fff
+    style H fill:#1e1e2e,stroke:#f9e2af,stroke-width:2px,color:#fff
+    style I fill:#1e1e2e,stroke:#fab387,stroke-width:2px,color:#fff
+    style J fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#fff
+    style K fill:#1e1e2e,stroke:#f9e2af,stroke-width:2px,color:#fff
+    style L fill:#1e1e2e,stroke:#f38ba8,stroke-width:2px,color:#fff
+    style M fill:#1e1e2e,stroke:#a6e3a1,stroke-width:2px,color:#fff
+    style N fill:#14342b,stroke:#94e2d5,stroke-width:3px,color:#fff
 ```
 
 ---
