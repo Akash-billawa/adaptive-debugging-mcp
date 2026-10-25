@@ -229,7 +229,7 @@ flowchart TD
 The Adaptive Debugging Intelligence MCP features an interactive visual memory dashboard. View historical experiment trees, telemetry graphs, redacted logs, and hypothesis confidence matrices directly in your browser.
 
 <p align="center">
-  <img src="assets/dashboard-preview.jpg" alt="Adaptive Debugging Visual Dashboard & Telemetry" width="100%" />
+  <img src="assets/dashboard-preview-v2.png" alt="Adaptive Debugging Visual Dashboard & Telemetry" width="100%" />
 </p>
 
 ### Accessing the Dashboard:

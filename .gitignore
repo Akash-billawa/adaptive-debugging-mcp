@@ -24,6 +24,7 @@ yarn-error.log*
 bun.report*
 dist/
 coverage/
+adim-dashboard.html
 
 # Temporary, scratch, and backup files
 scratch/
