@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero-banner.jpg" alt="Adaptive Debugging Intelligence MCP Banner" width="100%" />
+  <img src="assets/hero-banner-v2.jpg" alt="Adaptive Debugging Intelligence MCP Banner" width="100%" />
 </p>
 
 <p align="center">
@@ -67,7 +67,7 @@
 The Adaptive Debugging Intelligence MCP coordinates between durable local persistence, the host AI agent, and real-time execution hooks.
 
 <p align="center">
-  <img src="assets/architecture-diagram.jpg" alt="Cognitive AI Debugging Architecture Diagram" width="100%" />
+  <img src="assets/architecture-diagram-v2.jpg" alt="Cognitive AI Debugging Architecture Diagram" width="100%" />
 </p>
 
 ### The 5 Cognitive Modules
