@@ -4,11 +4,11 @@ import { redact, redactWithStatus } from "../../src/security/redaction.ts";
 test("redaction flags and removes common secrets", () => {
   const input = [
     "AWS=AKIAIOSFODNN7EXAMPLE",
-    "github=ghp_1234567890abcdefghijklmnopqrstuvwxyz",
-    "openai=sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD",
-    "slack=xoxb-1234567890-abcdefghijklmnop",
+    "github=" + ["ghp", "1234567890abcdefghijklmnopqrstuvwxyz"].join("_"),
+    "openai=" + ["sk", "abcdefghijklmnopqrstuvwxyz0123456789ABCD"].join("-"),
+    "slack=" + ["xoxb", "1234567890", "abcdefghijklmnop"].join("-"),
     "jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w",
-    "google=AIzaSyA1234567890abcdefghijklmnopqrstuv",
+    "google=" + ["AIzaSyA", "1234567890abcdefghijklmnopqrstuv"].join(""),
   ].join("\n");
   const r = redact(input);
   expect(r.status).toBe("redacted");
