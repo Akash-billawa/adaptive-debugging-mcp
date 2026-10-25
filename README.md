@@ -377,7 +377,7 @@ Add `adaptive-debug-memory` to your client's MCP configuration file (e.g. `claud
 }
 ```
 
-> **Windows note:** In JSON configuration paths on Windows, use forward slashes (e.g., `"C:/Adaptive Debugging MCP/adaptive-debugging-mcp/src/server/index.ts"`).
+> **Windows note:** In JSON configuration paths on Windows, use forward slashes (e.g., `"C:/path/to/adaptive-debugging-mcp/src/server/index.ts"`).
 
 ---
 
@@ -388,14 +388,14 @@ OpenCode CLI v2 integrates with the MCP server and uses the background observati
 #### 1. Add the MCP Server
 ```powershell
 # Register the MCP server globally
-opencode mcp add adaptive-debug-memory -- bun run C:/Adaptive%20Debugging%20MCP/adaptive-debugging-mcp/src/server/index.ts --global
+opencode mcp add adaptive-debug-memory -- bun run /path/to/adaptive-debugging-mcp/src/server/index.ts --global
 ```
 
 #### 2. Register the Observation Plugin
 In OpenCode v2.0.27+, the config `plugins` array requires a directory. For a file entrypoint, use auto-discovery by placing a loader in `~/.config/opencode/plugins/adaptive-debug-observer.ts`:
 
 ```typescript
-import AdaptiveDebugObserver from "file:///C:/Adaptive%20Debugging%20MCP/adaptive-debugging-mcp/plugin/index.ts";
+import AdaptiveDebugObserver from "file:///<abs-path-to-repo-with-%20-for-spaces>/adaptive-debugging-mcp/plugin/index.ts";
 export const AdaptiveDebugObserverPlugin = AdaptiveDebugObserver;
 export default AdaptiveDebugObserver;
 ```
@@ -417,7 +417,7 @@ This repository includes first-class support for Google Antigravity IDE via the 
   "mcpServers": {
     "adaptive-debug-memory": {
       "command": "bun",
-      "args": ["run", "C:/Adaptive Debugging MCP/adaptive-debugging-mcp/src/server/index.ts"]
+      "args": ["run", "/path/to/adaptive-debugging-mcp/src/server/index.ts"]
     }
   }
 }
