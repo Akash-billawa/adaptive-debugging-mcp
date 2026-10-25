@@ -106,108 +106,119 @@ Below is the complete architectural mind map representing the cognitive capabili
 ```mermaid
 mindmap
   root((Adaptive Debugging Intelligence))
-    Mission and Principles
-      Learn from every experiment
-      Create meaningfully different variants
-      Never lose failure history
-      Reason from evidence not repetition
-      Separate facts from hypotheses
-      Verify original failure is resolved
-      Report uncertainty and remaining paths
+    Mission & Principles
+      Learn from experiments
+      Differentiated variants
+      Preserve all history
+      Reason from evidence
+      Facts vs hypotheses
+      Acceptance verification
     Incident Intake
-      Normalized error fingerprints
+      Normalized fingerprints
       Stack trace signatures
       Reproduction baseline
-      Project and workspace identity
+      Workspace identity
       Environment snapshot
-      Explicit acceptance criteria
-    Observation and Telemetry
-      Tool inputs and outputs
-      Standard output and standard error
+      Acceptance criteria
+    Observation & Telemetry
+      Tool inputs & outputs
+      Stdout & stderr logs
       Exception signatures
-      Code diffs and blame
+      Code diffs & blame
       Secret redaction engine
-      Output size bounding
-      Incomplete capture disclosure
-    Adaptive Reasoning Engine
-      Normalized history retrieval
-      Separate symptoms from root causes
-      Extract hidden assumptions
-      Compare prior outcomes
-      Challenge previous reasoning
-      Seek disconfirming evidence
-      Single next action recommendation
+      64KB size bounding
+    Adaptive Decision Engine
+      History retrieval
+      Symptoms vs root causes
+      Extract assumptions
+      Compare prior attempts
+      Challenge reasoning
+      Single next action
     Solution Space Explorer
-      Competing root cause hypotheses
-      Strategy families Fix A Fix B Fix C
-      Experiment branches A1 A2 A1A A1AA
-      Arbitrary tree nesting
-      Explicit difference justification
-      Duplicate attempt detection
-    Candidate Ranking and Budgets
-      Explainable heuristic scoring
-      Informative failure bonuses
-      Duplicate proximity penalties
-      Configurable exploration budgets
-      Tracked search space exhaustion
-      Human approval for high impact
-    Technical Research Integration
-      Official documentation ranking
-      API and runtime references
-      Codebase blame and manifest analysis
-      Changelogs and issue trackers
+      Competing hypotheses
+      Strategy families A B C
+      Nested branches A1 A1A
+      Arbitrary tree depth
+      Difference justification
+      Duplicate detection
+    Candidate Ranking & Budgets
+      Explainable scoring
+      Informative bonus
+      Duplicate penalties
+      Exploration budgets
+      Search exhaustion
+      Human approval gate
+    Technical Research
+      Official documentation
+      API & runtime specs
+      Codebase blame & diffs
+      Issue trackers
       Contradiction detection
-      External text treated as untrusted
-    Verification and Resolution
-      Explicit acceptance conditions
-      Original reproduction re testing
-      Regression suite execution
-      Passing validation record required
-      Command success distinct from fix
-      Immutable verified status
-    Persistence and Data Lifecycle
-      Local SQLite WAL engine
-      FTS5 full text indexing
-      Local dense vector embeddings
-      Append only audit timeline
-      Atomic snapshot backups
-      Safe pre restore snapshots
-    Host Integrations and Security
-      OpenCode v2 CLI MCP protocol
-      OpenCode non blocking plugin
-      Antigravity IDE deep debug agent
-      Local first operation
-      Project scoped isolation
-      Credential redaction
+      Untrusted data safety
+    Verification & Resolution
+      Acceptance conditions
+      Original repro check
+      Regression test suite
+      Passing validation record
+      Command success != fix
+      Immutable verified state
+    Persistence & Memory
+      Local SQLite WAL
+      FTS5 BM25 search
+      Dense vector embeddings
+      Append-only audit trail
+      Atomic snapshots
+      Safe restore backups
+    Host Integrations
+      OpenCode v2 MCP
+      Non-blocking plugin
+      Antigravity IDE agent
+      Project isolation
+      Zero-leak redaction
 ```
 
 ### Cognitive State Loop
 
 ```mermaid
-graph TD
-    A[🔴 Incident Intake & Error Fingerprint] --> B[🔍 Hybrid Search: FTS5 + Semantic Vectors]
-    B --> C{Prior Solution Found?}
-    C -- High-Confidence Match --> D[🧪 Plan Targeted Reproduction & Validation]
-    C -- Novel Bug / Variant --> E[🧠 Formulate 2+ Competing Hypotheses]
-    E --> F[📚 Technical Research & Manifest Analysis]
-    F --> G[🎯 Adaptive Engine: Score & Rank Candidates]
-    G --> H[🌳 Create Differentiated Experiment Node A1/A1A]
-    H --> I[⚙️ Execute Controlled Attempt via Host Agent]
-    I --> J[📡 Capture Redacted Evidence & Telemetry]
-    J --> K{Observed Outcome?}
-    K -- Failed / Partial / Inconclusive --> L[📊 Record Evidence & Update Exhaustion Matrix]
+flowchart TD
+    A["🔴 Incident Intake<br/>& Error Signature"] --> B["🔍 Hybrid Search<br/>FTS5 + Dense Vectors"]
+    B --> C{"Prior Fix Found<br/>in Memory?"}
+    
+    C -->|High Match| D["🧪 Targeted Repro<br/>& Quick Validation"]
+    C -->|Novel Bug| E["🧠 Competing Causes<br/>2+ Hypotheses"]
+    
+    E --> F["📚 Tech Research<br/>Manifest & Blame"]
+    F --> G["🎯 Adaptive Engine<br/>Rank Candidates"]
+    G --> H["🌳 Branch Variant<br/>Node A1 / A1A"]
+    H --> I["⚙️ Controlled Attempt<br/>Host Execution"]
+    I --> J["📡 Raw Telemetry<br/>Redacted Evidence"]
+    
+    J --> K{"Observed<br/>Outcome?"}
+    K -->|Failed / Partial| L["📊 Update Evidence<br/>& Exhaustion"]
     L --> G
-    K -- Candidate Fix Observed --> M[🛡️ Run Acceptance Criteria Validation]
-    M -- Validation Failed --> L
-    M -- Validation Passed --> N[✅ Stamp Immutable Verified & Resolve Case]
+    
+    K -->|Candidate Fix| M["🛡️ Acceptance Run<br/>Validation Criteria"]
+    M -->|Validation Failed| L
+    M -->|Validation Passed| N["✅ Immutable Verified<br/>Case Resolved"]
 
-    style A fill:#1e1e2e,stroke:#f38ba8,stroke-width:2px,color:#fff
-    style B fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#fff
-    style E fill:#1e1e2e,stroke:#cba6f7,stroke-width:2px,color:#fff
-    style G fill:#1e1e2e,stroke:#fab387,stroke-width:2px,color:#fff
-    style H fill:#1e1e2e,stroke:#f9e2af,stroke-width:2px,color:#fff
-    style M fill:#1e1e2e,stroke:#a6e3a1,stroke-width:2px,color:#fff
-    style N fill:#1e1e2e,stroke:#94e2d5,stroke-width:3px,color:#fff
+    classDef default fill:#181825,stroke:#45475a,stroke-width:1.5px,color:#cdd6f4;
+    classDef intake fill:#1e1e2e,stroke:#f38ba8,stroke-width:2px,color:#fff;
+    classDef search fill:#1e1e2e,stroke:#89b4fa,stroke-width:2px,color:#fff;
+    classDef hypo fill:#1e1e2e,stroke:#cba6f7,stroke-width:2px,color:#fff;
+    classDef engine fill:#1e1e2e,stroke:#fab387,stroke-width:2px,color:#fff;
+    classDef branch fill:#1e1e2e,stroke:#f9e2af,stroke-width:2px,color:#fff;
+    classDef decision fill:#1e1e2e,stroke:#fab387,stroke-width:2px,color:#fff;
+    classDef validation fill:#1e1e2e,stroke:#a6e3a1,stroke-width:2px,color:#fff;
+    classDef verified fill:#14342b,stroke:#94e2d5,stroke-width:3px,color:#fff;
+
+    class A intake;
+    class B search;
+    class C,K decision;
+    class E hypo;
+    class G engine;
+    class H branch;
+    class M validation;
+    class N verified;
 ```
 
 ---
