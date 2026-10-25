@@ -18,9 +18,29 @@ data/
 
 # Logs and generated artifacts
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+bun.report*
 dist/
 coverage/
+
+# Temporary, scratch, and backup files
+scratch/
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+*.backup
+
+# Editor & IDE artifacts
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
 
 # OS cruft
 .DS_Store
 Thumbs.db
+desktop.ini
