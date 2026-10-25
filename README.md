@@ -16,7 +16,7 @@
 
 <p align="center">
   <strong>A persistent, cognitive debugging memory and adaptive exploration system for AI coding agents.</strong><br>
-  Built for <a href="https://opencode.ai/">OpenCode CLI (v2)</a> and <a href="https://antigravity.google/">Google Antigravity IDE</a>.<br>
+  Universal MCP server supporting <strong>any AI agent CLI or IDE</strong> — including <a href="https://claude.ai/">Claude Desktop</a>, <a href="https://cursor.com/">Cursor</a>, <a href="https://codeium.com/windsurf">Windsurf</a>, <a href="https://github.com/cline/cline">Cline</a>, <a href="https://opencode.ai/">OpenCode CLI</a>, and <a href="https://antigravity.google/">Google Antigravity IDE</a>.<br>
   <em>Investigate difficult, non-trivial bugs without repeating mistakes, without hallucinating success, and with mathematical verification.</em>
 </p>
 
@@ -37,7 +37,8 @@
 - [Comprehensive Tool Catalog (22 Tools)](#-comprehensive-tool-catalog-22-tools)
 - [Experiment Branching & Outcome Vocabulary](#-experiment-branching--outcome-vocabulary)
 - [Quick Start & Setup](#-quick-start--setup)
-- [Host Integration Guides](#-host-integration-guides)
+- [Host Integration Guides (Universal MCP Support)](#-host-integration-guides-universal-mcp-support)
+  - [Universal MCP Setup (Claude, Cursor, Windsurf, Cline)](#universal-mcp-client-configuration-claude-desktop-cursor-windsurf-cline-roo-code)
   - [OpenCode CLI (v2)](#opencode-cli-v2)
   - [Antigravity IDE](#antigravity-ide)
 - [Database Maintenance & Backup Lifecycle](#-database-maintenance--backup-lifecycle)
@@ -248,7 +249,7 @@ tools["adaptive-debug-memory"].debug_data_export({ format: "html", incident_id: 
 
 ## 🧰 Comprehensive Tool Catalog (22 Tools)
 
-The system exposes 22 tightly integrated Model Context Protocol (MCP) tools, fully compatible with OpenCode CLI and Antigravity IDE:
+The system exposes 22 tightly integrated Model Context Protocol (MCP) tools, fully compatible with **any MCP-capable AI agent, CLI, or IDE** (including Claude Desktop, Cursor, Windsurf, Cline, Roo Code, OpenCode CLI, Antigravity IDE, etc.):
 
 ### 🏛️ 1. Incident & Lifecycle Management
 | Tool | Description | Key Arguments |
@@ -338,7 +339,7 @@ Family Strategy A: "Inspect and update native dynamic library binding"
 ### Prerequisites
 - [Bun](https://bun.sh) ≥ 1.0 (built on `bun:sqlite` with native FTS5 and vector operations)
 - Node.js ≥ 18 (optional alternative)
-- [OpenCode CLI (v2)](https://opencode.ai/) or [Google Antigravity IDE](https://antigravity.google/)
+- **Any MCP client, IDE, or CLI** (e.g. Claude Desktop, Cursor, Windsurf, Cline, Roo Code, OpenCode CLI, Antigravity IDE, etc.)
 
 ### Installation
 
@@ -362,7 +363,28 @@ bun run db:dashboard
 
 ---
 
-## 🔌 Host Integration Guides
+## 🔌 Host Integration Guides (Universal MCP Support)
+
+Because ADIM is built on the open **[Model Context Protocol (MCP)](https://modelcontextprotocol.io/)** standard, it works out-of-the-box with **any AI agent, IDE, or CLI host** that supports MCP.
+
+### Universal MCP Client Configuration (Claude Desktop, Cursor, Windsurf, Cline, Roo Code)
+
+Add `adaptive-debug-memory` to your client's MCP configuration file (e.g. `claude_desktop_config.json`, `~/.cursor/mcp.json`, or Cline / Roo Code settings):
+
+```json
+{
+  "mcpServers": {
+    "adaptive-debug-memory": {
+      "command": "bun",
+      "args": ["run", "/path/to/adaptive-debugging-mcp/src/server/index.ts"]
+    }
+  }
+}
+```
+
+> **Windows note:** In JSON configuration paths on Windows, use forward slashes (e.g., `"C:/Adaptive Debugging MCP/adaptive-debugging-mcp/src/server/index.ts"`).
+
+---
 
 ### OpenCode CLI (v2)
 
