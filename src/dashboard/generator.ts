@@ -15,6 +15,7 @@ export interface DashboardOptions {
   projectId?: string;
   incidentId?: string;
   title?: string;
+  limit?: number;
 }
 
 export interface IncidentSummaryData {
@@ -107,9 +108,10 @@ export function generateDashboardData(store: Store, options: DashboardOptions = 
   const projectMap = new Map<string, Project>();
   for (const p of allProjects) projectMap.set(p.project_id, p);
 
+  const maxIncidents = Math.max(1, Math.min(500, options.limit ?? 100));
   const incidentsRaw = options.projectId
-    ? store.listIncidents(options.projectId, 500)
-    : store.listIncidents(undefined, 500);
+    ? store.listIncidents(options.projectId, maxIncidents)
+    : store.listIncidents(undefined, maxIncidents);
 
   let totalExperiments = 0;
   let verifiedExperiments = 0;
@@ -220,9 +222,6 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(data.title)}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-base: #0a0e17;
@@ -277,7 +276,7 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
     body {
       background-color: var(--bg-base);
       color: var(--text-main);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       font-size: 14px;
       line-height: 1.5;
       min-height: 100vh;
@@ -285,7 +284,7 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
     }
 
     code, pre {
-      font-family: 'JetBrains Mono', Consolas, 'Courier New', monospace;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     }
 
     /* Top Navigation Bar */
@@ -1002,7 +1001,7 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
           <span id="searchResultStats" style="font-size: 12px; color: var(--text-dim);">Enter a query to run search</span>
         </div>
         <div id="searchResultsContainer">
-          <p style="color: var(--text-dim); padding: 12px 0;">Use this interactive console to evaluate hybrid retrieval: exact fingerprint matches (+100), FTS5 BM25 (+10-35), and dense semantic similarity (+0-40).</p>
+          <p style="color: var(--text-dim); padding: 12px 0;">Use this interactive console to evaluate multi-signal retrieval: exact phrase matches, keyword token overlap, and deep investigation context across experiments and hypotheses.</p>
         </div>
       </div>
     </section>
@@ -1234,13 +1233,22 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
 
       let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">';
       list.forEach(h => {
+        const isSupported = h.status === 'supported';
+        const isRejected = h.status === 'rejected' || h.status === 'refuted';
+        const isAbandoned = h.status === 'abandoned';
+        const pillClass = isSupported ? 'pill-verified' : isRejected ? 'pill-failed' : isAbandoned ? 'pill-superseded' : 'pill-candidate';
+        const metaNote = h.confidence_note
+          ? \`Confidence: \${escapeText(h.confidence_note)}\`
+          : \`Status: \${escapeText(h.status)}\`;
+
         html += \`
           <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-              <span class="pill \${h.status === 'supported' ? 'pill-verified' : h.status === 'refuted' ? 'pill-failed' : 'pill-candidate'}">\${escapeText(h.status)}</span>
-              <span style="font-size: 11px; color: var(--text-dim);">Plausibility: \${Math.round(h.plausibility * 100)}%</span>
+              <span class="pill \${pillClass}">\${escapeText(h.status)}</span>
+              <span style="font-size: 11px; color: var(--text-dim);">\${metaNote}</span>
             </div>
             <div style="font-size: 13px; font-weight: 500; color: var(--text-main); margin-bottom: 6px;">\${escapeText(h.statement)}</div>
+            \${h.rationale ? \`<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;"><strong>Rationale:</strong> \${escapeText(h.rationale)}</div>\` : ''}
             \${h.test_strategy ? \`<div style="font-size: 11px; color: var(--text-muted);"><strong>Test strategy:</strong> \${escapeText(h.test_strategy)}</div>\` : ''}
           </div>
         \`;
@@ -1309,17 +1317,25 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
         return;
       }
 
-      container.innerHTML = list.map(r => \`
+      container.innerHTML = list.map(r => {
+        const title = r.source_title || r.title || 'Technical Citation';
+        const url = r.source_uri || r.url_or_locator || '';
+        const summary = r.relevant_summary || r.summary || '';
+        const reliability = r.source_type
+          ? 'Source: ' + escapeText(r.source_type) + (r.reliability_note ? ' • ' + escapeText(r.reliability_note) : '')
+          : escapeText(r.reliability_note || 'external research');
+        return \`
         <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px; margin-bottom: 8px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-weight: 600; font-size: 13px; color: var(--accent-secondary);">\${escapeText(r.title)}</span>
-            <span style="font-size: 11px; color: var(--text-dim);">Authority score: \${Math.round((r.authority_score || 0) * 100)}%</span>
+            <span style="font-weight: 600; font-size: 13px; color: var(--accent-secondary);">\${escapeText(title)}</span>
+            <span style="font-size: 11px; color: var(--text-dim);">\${reliability}</span>
           </div>
-          \${r.url_or_locator ? \`<div style="font-size: 11px; color: var(--text-dim); margin: 2px 0;">\${escapeText(r.url_or_locator)}</div>\` : ''}
-          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">\${escapeText(r.summary)}</div>
-          \${r.contradiction_flag ? '<div style="color: var(--status-failed); font-size: 11px; margin-top: 4px;">⚠️ Contradicts current observations</div>' : ''}
+          \${url ? \`<div style="font-size: 11px; color: var(--text-dim); margin: 2px 0;"><a href="\${escapeText(url)}" target="_blank" rel="noopener" style="color: var(--accent-primary); text-decoration: none;">\${escapeText(url)}</a></div>\` : ''}
+          \${summary ? \`<div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">\${escapeText(summary)}</div>\` : ''}
+          \${r.claim_supported_or_challenged ? \`<div style="color: #cbd5e1; font-size: 11px; margin-top: 4px; background: rgba(0,0,0,0.25); padding: 4px 6px; border-radius: 4px;"><strong>Claim:</strong> \${escapeText(r.claim_supported_or_challenged)}</div>\` : ''}
         </div>
-      \`).join('');
+      \`;
+      }).join('');
     }
 
     function executePlaygroundSearch() {
@@ -1334,26 +1350,47 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
       DATA.incidents.forEach(item => {
         let score = 0;
         let matchedVia = [];
-        const fullText = (item.incident.title + " " + item.incident.initial_symptom + " " + (item.incident.error_signature || '')).toLowerCase();
+        const inc = item.incident;
+        const details = DATA.incidentDetails[inc.incident_id];
+        const primaryText = (inc.title + " " + inc.initial_symptom + " " + (inc.acceptance_criteria || '')).toLowerCase();
 
-        if (fullText.includes(query)) {
-          score += 60;
-          matchedVia.push("exact query match");
+        if (primaryText.includes(query)) {
+          score += 50;
+          matchedVia.push("exact query match (+50)");
         }
 
         let tokenMatches = 0;
         words.forEach(w => {
-          if (fullText.includes(w)) tokenMatches++;
+          if (primaryText.includes(w)) tokenMatches++;
         });
         if (tokenMatches > 0) {
-          const bm25Approx = Math.round((tokenMatches / words.length) * 35);
-          score += bm25Approx;
-          matchedVia.push(\`keyword match (\${tokenMatches}/\${words.length} terms)\`);
+          const tokenScore = Math.round((tokenMatches / words.length) * 35);
+          score += tokenScore;
+          matchedVia.push(\`keyword match (\${tokenMatches}/\${words.length} terms, +\${tokenScore})\`);
+        }
+
+        if (details) {
+          let detailMatched = false;
+          if (details.hypotheses && details.hypotheses.some(h => (h.statement + " " + (h.rationale || '')).toLowerCase().includes(query))) {
+            score += 15;
+            matchedVia.push("hypothesis match (+15)");
+            detailMatched = true;
+          }
+          if (details.experiments && details.experiments.some(e => (e.title + " " + (e.proposed_change || '') + " " + (e.actual_observation || '')).toLowerCase().includes(query))) {
+            score += 15;
+            matchedVia.push("experiment match (+15)");
+            detailMatched = true;
+          }
+          if (!detailMatched && words.length > 0) {
+            const expTokenMatch = details.experiments && details.experiments.some(e => words.some(w => (e.title || '').toLowerCase().includes(w)));
+            if (expTokenMatch) {
+              score += 10;
+              matchedVia.push("experiment token match (+10)");
+            }
+          }
         }
 
         if (score > 0) {
-          score += 15;
-          matchedVia.push("dense semantic vector similarity (+15)");
           results.push({ item, score, matchedVia });
         }
       });
@@ -1373,7 +1410,7 @@ export function generateDashboardHtml(store: Store, options: DashboardOptions = 
             <div style="font-family: monospace; font-size: 12px; color: var(--accent-secondary); font-weight: 600;">Match Score: \${r.score}</div>
           </div>
           <div style="font-size: 12px; color: var(--text-muted); margin: 4px 0;">\${escapeText(r.item.incident.initial_symptom)}</div>
-          <div style="font-size: 11px; color: var(--text-dim); display: flex; gap: 8px; margin-top: 6px;">
+          <div style="font-size: 11px; color: var(--text-dim); display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
             \${r.matchedVia.map(m => \`<span style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; padding: 2px 6px; border-radius: 4px;">\${escapeText(m)}</span>\`).join('')}
           </div>
         </div>

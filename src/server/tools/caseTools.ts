@@ -149,6 +149,7 @@ export const caseTools: Tool[] = [
           sections: arr("Sections to include", str("hypotheses|strategies|attempts|validations|research|timeline|environment"), { default: ["attempts", "hypotheses"] }),
           max_attempts: { type: "number", description: "Max attempts returned", default: 50 },
           include_evidence_refs: { type: "boolean", description: "Include evidence ids", default: true },
+          include_evidence_content: { type: "boolean", description: "Include stored, redacted evidence content", default: false },
         },
         ["incident_id"],
       ),
@@ -156,9 +157,21 @@ export const caseTools: Tool[] = [
     handle(ctx, args) {
       const id = reqStr(args, "incident_id");
       const inc = ctx.store.getIncidentOrFail(id);
-      const sections = new Set(optArr(args, "sections").map((s) => String(s)));
-      const maxAttempts = Math.max(1, Math.min(200, Number(args.max_attempts ?? 50)));
+      const rawSections = optArr(args, "sections");
+      const sections = rawSections.length > 0
+        ? new Set(rawSections.map((s) => String(s)))
+        : new Set(["attempts", "hypotheses"]);
+
+      let maxAttempts = 50;
+      if (args.max_attempts !== undefined) {
+        const parsed = Number(args.max_attempts);
+        if (!Number.isFinite(parsed) || parsed < 1) {
+          throw validationError("max_attempts must be a valid positive integer");
+        }
+        maxAttempts = Math.max(1, Math.min(200, Math.floor(parsed)));
+      }
       const includeEvidence = optBool(args, "include_evidence_refs", true);
+      const includeEvidenceContent = optBool(args, "include_evidence_content", false);
 
       const out: Record<string, unknown> = {
         ok: true,
@@ -173,7 +186,7 @@ export const caseTools: Tool[] = [
         unresolved: attempts.filter((a) => a.outcome_status === "pending" || a.outcome_status === "inconclusive").length,
       };
 
-      if (sections.size === 0 || sections.has("attempts")) {
+      if (sections.has("attempts")) {
         out.attempts = attempts.slice(0, maxAttempts).map((a) => ({
           experiment_id: a.experiment_id,
           label: a.display_label,
@@ -181,11 +194,25 @@ export const caseTools: Tool[] = [
           title: a.title,
           parent_experiment_id: a.parent_experiment_id,
           hypothesis_id: a.hypothesis_id,
+          risk_level: a.risk_level,
           execution_status: a.execution_status,
           outcome_status: a.outcome_status,
           observed: a.actual_observation ?? null, // raw observation
           interpretation: a.interpretation ?? null, // AI interpretation, kept distinct
           evidence_refs: includeEvidence ? ctx.store.listEvidence({ experiment_id: a.experiment_id }).map((e) => e.evidence_id) : undefined,
+          evidence: includeEvidenceContent
+            ? ctx.store.listEvidence({ experiment_id: a.experiment_id }).map((e) => {
+                const c = ctx.store.getEvidenceContent(e.evidence_id);
+                return {
+                  evidence_id: e.evidence_id,
+                  evidence_type: e.evidence_type,
+                  redaction_status: e.redaction_status,
+                  truncated: c?.truncated ?? false,
+                  content: c?.content ?? "",
+                  interpretation: e.interpretation,
+                };
+              })
+            : undefined,
         }));
       }
       if (sections.has("hypotheses")) out.hypotheses = ctx.store.listHypotheses(id);
@@ -194,7 +221,7 @@ export const caseTools: Tool[] = [
       if (sections.has("research")) out.research = ctx.store.listResearch(id);
       if (sections.has("timeline")) out.timeline = listTimeline(ctx.store.db, id).slice(-200);
       if (sections.has("environment")) {
-        const envs = ctx.store.db.query("SELECT * FROM environments WHERE experiment_id IN (SELECT experiment_id FROM experiments WHERE incident_id = ?) OR experiment_id IS NULL ORDER BY captured_at DESC LIMIT 5").all(id);
+        const envs = ctx.store.db.query("SELECT * FROM environments WHERE experiment_id IN (SELECT experiment_id FROM experiments WHERE incident_id = ?) OR (experiment_id IS NULL AND project_id = ?) ORDER BY captured_at DESC LIMIT 5").all(id, inc.project_id);
         out.environment = envs;
       }
 

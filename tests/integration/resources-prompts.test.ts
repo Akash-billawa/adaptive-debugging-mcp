@@ -75,8 +75,14 @@ test("resources: list and read incident summary, tree, evidence, and project rec
   const listMsg = await handleMessage(catalog, { jsonrpc: "2.0", id: 2, method: "resources/list" });
   const resources = (listMsg?.result as any).resources;
   expect(Array.isArray(resources)).toBe(true);
-  expect(resources.some((r: any) => r.uri.includes("debug://incident/{incident_id}/summary"))).toBe(true);
   expect(resources.some((r: any) => r.uri === `debug://incident/${inc.incident_id}/summary`)).toBe(true);
+  expect(resources.every((r: any) => !r.uri.includes("{"))).toBe(true);
+
+  // templates/list
+  const tmplMsg = await handleMessage(catalog, { jsonrpc: "2.0", id: 21, method: "resources/templates/list" });
+  const templates = (tmplMsg?.result as any).resourceTemplates;
+  expect(Array.isArray(templates)).toBe(true);
+  expect(templates.some((t: any) => t.uriTemplate.includes("debug://incident/{incident_id}/summary"))).toBe(true);
 
   // 2. resources/read - summary
   const readSummary = await handleMessage(catalog, {

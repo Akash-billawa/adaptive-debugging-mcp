@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from "bun:test";
-import { rmSync, existsSync, writeFileSync } from "node:fs";
+import { rmSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tempDbPath, openStore, closeStore } from "./helpers.ts";
 import { createBackup, verifyBackup, restoreBackup, applyRetention } from "../../src/memory/backup.ts";
@@ -219,4 +219,206 @@ test("CLI: executes backup, verify, and prune subcommands successfully", async (
   });
   expect(pruneProc.exitCode).toBe(0);
   expect(pruneProc.stdout.toString()).toContain("[Dry Run]");
+});
+
+test("createBackup rejects outPath === dbPath without corrupting or truncating database", () => {
+  const dbPath = getTempPath(".self-backup.db");
+  const store = openStore(dbPath);
+  const inc = store.createIncident({
+    project: { display_name: "SelfBackupApp" },
+    title: "Critical data",
+    initial_symptom: "Test symptom",
+    actor: "agent",
+  }).incident;
+  closeStore(store);
+
+  let err: any;
+  try {
+    createBackup({ dbPath, outPath: dbPath });
+  } catch (e) {
+    err = e;
+  }
+  expect(err).toBeDefined();
+  expect(err.message).toContain("Cannot backup database to itself");
+
+  // Database must still exist and be intact
+  const storeCheck = openStore(dbPath);
+  const fetched = storeCheck.getIncident(inc.incident_id);
+  expect(fetched).not.toBeNull();
+  expect(fetched?.title).toBe("Critical data");
+  closeStore(storeCheck);
+});
+
+test("restoreBackup rejects tampered backup when manifest SHA mismatches", () => {
+  const origDb = getTempPath(".tamper-orig.db");
+  const store = openStore(origDb);
+  store.createIncident({
+    project: { display_name: "OrigApp" },
+    title: "Original",
+    initial_symptom: "Symptom",
+    actor: "agent",
+  });
+  closeStore(store);
+
+  const backupPath = getTempPath(".tamper.bak.db");
+  createBackup({ dbPath: origDb, outPath: backupPath });
+
+  // Tamper with manifest file
+  const manifestPath = `${backupPath}.manifest.json`;
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  manifest.sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+
+  const v = verifyBackup(backupPath);
+  expect(v.valid).toBe(true);
+  expect(v.manifest_matched).toBe(false);
+  expect(v.ok).toBe(false);
+
+  const targetDb = getTempPath(".tamper-target.db");
+  let restoreErr: any;
+  try {
+    restoreBackup({ backupPath, targetDbPath: targetDb });
+  } catch (e) {
+    restoreErr = e;
+  }
+  expect(restoreErr).toBeDefined();
+  expect(restoreErr.message).toContain("mismatched manifest SHA-256");
+});
+
+test("restoreBackup captures uncheckpointed WAL in safety snapshot via VACUUM INTO", () => {
+  const origDb = getTempPath(".wal-orig.db");
+  const origStore = openStore(origDb);
+  origStore.createIncident({
+    project: { display_name: "RestoreSourceApp" },
+    title: "Restored from backup",
+    initial_symptom: "Symptom",
+    actor: "agent",
+  });
+  closeStore(origStore);
+
+  const backupPath = getTempPath(".wal-backup.bak.db");
+  createBackup({ dbPath: origDb, outPath: backupPath });
+
+  // Create target DB with WAL data
+  const targetDb = getTempPath(".wal-target.db");
+  const targetStore = openStore(targetDb);
+  targetStore.createIncident({ project: { display_name: "App1" }, title: "Target Inc 1", initial_symptom: "S1", actor: "agent" });
+  targetStore.createIncident({ project: { display_name: "App2" }, title: "Target Inc 2", initial_symptom: "S2", actor: "agent" });
+  targetStore.createIncident({ project: { display_name: "App3" }, title: "Target Inc 3", initial_symptom: "S3", actor: "agent" });
+  closeStore(targetStore);
+
+  const res = restoreBackup({
+    backupPath,
+    targetDbPath: targetDb,
+    createSafetySnapshot: true,
+  });
+
+  expect(res.ok).toBe(true);
+  expect(res.safety_snapshot_path).toBeDefined();
+  tempPaths.push(res.safety_snapshot_path!);
+
+  // Inspect the safety snapshot database: all 3 target incidents must exist
+  const snapshotDb = new Database(res.safety_snapshot_path!, { readonly: true });
+  const countRow = snapshotDb.query("SELECT COUNT(*) as c FROM incidents").get() as any;
+  expect(countRow.c).toBe(3);
+  snapshotDb.close();
+
+  // Restored target DB now has the 1 backup incident
+  const restoredDb = new Database(targetDb, { readonly: true });
+  const restoredCount = restoredDb.query("SELECT COUNT(*) as c FROM incidents").get() as any;
+  expect(restoredCount.c).toBe(1);
+  restoredDb.close();
+});
+
+test("restoreBackup refuses to corrupt or modify target DB if locked by another process", () => {
+  const origDb = getTempPath(".lock-orig.db");
+  const origStore = openStore(origDb);
+  origStore.createIncident({
+    project: { display_name: "LockSourceApp" },
+    title: "Source Inc",
+    initial_symptom: "Symptom",
+    actor: "agent",
+  });
+  closeStore(origStore);
+
+  const backupPath = getTempPath(".lock-backup.bak.db");
+  createBackup({ dbPath: origDb, outPath: backupPath });
+
+  const targetDb = getTempPath(".lock-target.db");
+  const targetStore = openStore(targetDb);
+  targetStore.createIncident({ project: { display_name: "LockTargetApp" }, title: "Live incident", initial_symptom: "Live symptom", actor: "agent" });
+  closeStore(targetStore);
+
+  // Hold exclusive lock on targetDb
+  const lockConn = new Database(targetDb);
+  lockConn.run("BEGIN EXCLUSIVE;");
+
+  let restoreErr: any;
+  try {
+    restoreBackup({
+      backupPath,
+      targetDbPath: targetDb,
+    });
+  } catch (e) {
+    restoreErr = e;
+  }
+  expect(restoreErr).toBeDefined();
+  expect(restoreErr.message).toContain("database is active or locked");
+
+  // Release lock
+  lockConn.run("ROLLBACK;");
+  lockConn.close();
+
+  // Verify targetDb is completely intact and not malformed
+  const checkStore = openStore(targetDb);
+  const incs = checkStore.listIncidents();
+  expect(incs.length).toBe(1);
+  expect(incs[0].title).toBe("Live incident");
+  closeStore(checkStore);
+});
+
+test("applyRetention deletes orphaned evidence_content rows", () => {
+  const dbPath = getTempPath(".retention-content.db");
+  const store = openStore(dbPath);
+
+  const { incident: inc } = store.createIncident({
+    project: { display_name: "RetentionContentApp" },
+    title: "Retention content test",
+    initial_symptom: "Symptom",
+    actor: "agent",
+  });
+
+  const oldDate = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+  store.db.run(
+    `INSERT INTO evidence (
+      evidence_id, project_id, incident_id, evidence_type, storage_reference,
+      capture_source, capture_complete, redaction_status, retention_class, captured_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 1, 'no_secret_detected', 'transient', ?, ?)`,
+    ["ev_transient_with_content", inc.project_id, inc.incident_id, "terminal_output", "ref_content", "agent", oldDate, oldDate],
+  );
+  store.db.run(
+    `INSERT INTO evidence_content (
+      evidence_id, content, truncated, original_size_bytes
+    ) VALUES (?, ?, 0, 1250)`,
+    ["ev_transient_with_content", "Large content that would previously be orphaned for 1250 bytes"],
+  );
+  closeStore(store);
+
+  // Check evidence_content row exists before retention
+  const checkDbBefore = new Database(dbPath);
+  const contentBefore = checkDbBefore.query("SELECT COUNT(*) as c FROM evidence_content WHERE evidence_id = 'ev_transient_with_content'").get() as any;
+  expect(contentBefore.c).toBe(1);
+  checkDbBefore.close();
+
+  // Run retention
+  const res = applyRetention({ dbPath, olderThanDays: 30, dryRun: false });
+  expect(res.pruned_counts.transient_evidence).toBe(1);
+
+  // Check evidence_content row was deleted along with evidence
+  const checkDbAfter = new Database(dbPath);
+  const contentAfter = checkDbAfter.query("SELECT COUNT(*) as c FROM evidence_content WHERE evidence_id = 'ev_transient_with_content'").get() as any;
+  expect(contentAfter.c).toBe(0);
+  const evAfter = checkDbAfter.query("SELECT COUNT(*) as c FROM evidence WHERE evidence_id = 'ev_transient_with_content'").get() as any;
+  expect(evAfter.c).toBe(0);
+  checkDbAfter.close();
 });

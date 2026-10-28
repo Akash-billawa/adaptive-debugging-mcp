@@ -70,6 +70,8 @@ export interface GitDiffSummary {
   additions: number;
   deletions: number;
   diff_snippet: string;
+  /** Set when git could not produce the diff (bad revision, not a repository, ...). */
+  error?: string;
 }
 
 export interface CodebaseFinding {

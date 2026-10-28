@@ -8,7 +8,7 @@
 
 import { writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { exec } from "node:child_process";
+import { spawn } from "node:child_process";
 import { openDatabase, resolveDbPath } from "../memory/db.ts";
 import { Store } from "../memory/store.ts";
 import { generateDashboardHtml } from "../dashboard/generator.ts";
@@ -44,23 +44,21 @@ function hasFlag(args: string[], flag: string): boolean {
 function openInBrowser(filePath: string): void {
   const absPath = resolve(filePath);
   const platform = process.platform;
-  let cmd = "";
 
+  let child;
   if (platform === "win32") {
-    cmd = `start "" "${absPath}"`;
+    child = spawn("cmd.exe", ["/c", "start", "", absPath], { detached: true, stdio: "ignore" });
   } else if (platform === "darwin") {
-    cmd = `open "${absPath}"`;
+    child = spawn("open", [absPath], { detached: true, stdio: "ignore" });
   } else {
-    cmd = `xdg-open "${absPath}"`;
+    child = spawn("xdg-open", [absPath], { detached: true, stdio: "ignore" });
   }
 
-  exec(cmd, (err) => {
-    if (err) {
-      console.warn(`[WARN] Could not automatically open browser: ${err.message}`);
-    } else {
-      console.log(`[INFO] Dashboard opened in browser.`);
-    }
+  child.on("error", (err) => {
+    console.warn(`[WARN] Could not automatically open browser: ${err.message}`);
   });
+  child.unref();
+  console.log(`[INFO] Dashboard opened in browser.`);
 }
 
 async function main(): Promise<void> {

@@ -83,7 +83,8 @@ export function seedCorpus(store: Store): Corpus {
     actor: "agent",
   }).incident;
   const vExp = store.createExperiment({ incident_id: v.incident_id, node_kind: "experiment", title: "Restart worker to reload config", proposed_change: "pm2 restart worker", expected_observation: "config live", risk_level: "low", actor: "agent" }).experiment;
-  store.recordValidation({ incident_id: v.incident_id, experiment_id: vExp.experiment_id, validation_plan: "edit config -> observe live behavior", criteria_results: [{ criteria: "config live", status: "passed" }], execution_result: "passed", evidence_ids: [], verified_by: "agent" });
+  const vEv = store.recordEvidence({ project_id: v.project_id, incident_id: v.incident_id, experiment_id: vExp.experiment_id, evidence_type: "stdout", content: "worker restarted; config live", capture_source: "agent" });
+  store.recordValidation({ incident_id: v.incident_id, experiment_id: vExp.experiment_id, validation_plan: "edit config -> observe live behavior", criteria_results: [{ criteria: "config live", status: "passed" }], execution_result: "passed", evidence_ids: [vEv.evidence.evidence_id], verified_by: "agent" });
 
   void distinctFingerprints; void aSimilar;
   return { projectA: a.incident_id, projectADuplicate: aDup.incident_id, projectASimilar: aSimilar.incident_id, projectB: b.incident_id, verifiedIncident: v.incident_id };

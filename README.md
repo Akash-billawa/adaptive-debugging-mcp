@@ -7,7 +7,7 @@
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/Language-TypeScript%205.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
   <a href="https://modelcontextprotocol.io/"><img src="https://img.shields.io/badge/Protocol-MCP%20Standard-412991?style=for-the-badge&logo=anthropic&logoColor=white" alt="MCP Protocol"></a>
   <a href="https://sqlite.org/"><img src="https://img.shields.io/badge/Engine-SQLite%20FTS5%20%2B%20Vectors-003B57?style=for-the-badge&logo=sqlite&logoColor=white" alt="SQLite FTS5"></a>
-  <a href="#test-suite--evaluations"><img src="https://img.shields.io/badge/Tests-138%20Passing-success?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests"></a>
+  <a href="#test-suite--evaluations"><img src="https://img.shields.io/badge/Tests-196%20Passing-success?style=for-the-badge&logo=checkmarx&logoColor=white" alt="Tests"></a>
   <a href="#security--safety"><img src="https://img.shields.io/badge/Security-Secret%20Redaction%20Active-blueviolet?style=for-the-badge&logo=shield&logoColor=white" alt="Security Redaction"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-emerald?style=for-the-badge" alt="License: MIT"></a>
 </p>
@@ -89,7 +89,7 @@ The Adaptive Debugging Intelligence MCP coordinates between durable local persis
    - Provides an explainable **One-Action-Next** recommendation (`debug_next_experiment_prepare`).
 
 4. **Module 4: Budgeted Experiment Trees**
-   - Structures investigation paths into families and nested variants (`A → A1 → A1A → A1AA`).
+   - Structures investigation paths into families and nested variants (`A → A1 → A1A → A1A1`).
    - Requires every variant to document an explicit `reason_for_difference`.
    - Enforces configurable exploration budgets (depth, attempt counts, family branches) to prevent infinite rabbit holes.
 
@@ -249,46 +249,47 @@ The system exposes 22 tightly integrated Model Context Protocol (MCP) tools, ful
 ### 🏛️ 1. Incident & Lifecycle Management
 | Tool | Description | Key Arguments |
 | :--- | :--- | :--- |
-| `debug_case_start` | Opens an incident with normalized fingerprints, baseline environment, and acceptance criteria. Suggests related cases. | `title`, `problem_statement`, `acceptance_criteria`, `symptoms` |
-| `debug_case_read` | Retrieves the authoritative case file, keeping observed facts and AI interpretations separated. | `id` |
-| `debug_case_status_update` | Performs lifecycle transitions (`open`, `investigating`, `blocked`, `resolved`). **Requires valid validation run to resolve.** | `id`, `status`, `reason`, `validation_id` |
-| `debug_case_link` | Links related incidents across projects or strategies without merging them. | `source_id`, `target_id`, `link_type`, `rationale` |
+| `debug_case_start` | Opens an incident with normalized fingerprints, baseline environment, and acceptance criteria. Suggests related cases. | `title`, `initial_symptom`, `project`, `error_text`, `acceptance_criteria`, `environment` |
+| `debug_case_read` | Retrieves the authoritative case file, keeping observed facts and AI interpretations separated. | `incident_id`, `sections`, `max_attempts`, `format` |
+| `debug_case_status_update` | Performs lifecycle transitions (`open`, `investigating`, `blocked`, `resolved`). **Requires valid validation run to resolve.** | `incident_id`, `status`, `rationale`, `verification_id`, `override` |
+| `debug_case_link` | Links related incidents across projects or strategies without merging them. | `source_incident_id`, `target_incident_id`, `relationship_type`, `rationale` |
 
 ### 🔍 2. Retrieval & Semantic Memory
 | Tool | Description | Key Arguments |
 | :--- | :--- | :--- |
-| `debug_history_search` | Hybrid retrieval (normalized fingerprint + FTS5 BM25 + dense vector embeddings) with match explanations. | `query`, `fingerprint`, `project_id`, `include_cross_project` |
-| `debug_semantic_index` | Synchronizes vector embeddings for cases, hypotheses, and evidence with status reporting. | `action` (`status` \| `sync` \| `rebuild`), `project_id` |
-| `debug_timeline_read` | Reads an append-only audit trail of every status transition, override, and recorded event. | `incident_id`, `limit` |
+| `debug_history_search` | Hybrid retrieval (normalized fingerprint + FTS5 BM25 + dense vector embeddings) with match explanations. | `query`, `project_id`, `include_cross_project`, `status`, `limit`, `min_score` |
+| `debug_semantic_index` | Synchronizes vector embeddings for cases, hypotheses, and evidence with status reporting. | `action` (`status` \| `sync` \| `rebuild`), `project_id`, `rebuild_all` |
+| `debug_timeline_read` | Reads an append-only audit trail of every status transition, override, and recorded event. | `incident_id`, `limit`, `event_types` |
 
 ### 🧠 3. Hypotheses & Technical Research
 | Tool | Description | Key Arguments |
 | :--- | :--- | :--- |
-| `debug_hypothesis_manage` | Creates, tests, strengthens, weakens, or rejects competing root-cause hypotheses. | `action`, `statement`, `rationale`, `status` |
-| `debug_research_plan` | Decomposes error tokens and hypotheses into targeted research questions and source queries. | `incident_id`, `scope` |
-| `debug_codebase_analyze` | Inspects project manifests (`package.json`, `pyproject.toml`), git blame, and diff histories safely. | `action`, `paths`, `commit_range` |
+| `debug_hypothesis_manage` | Creates, tests, strengthens, weakens, or rejects competing root-cause hypotheses. | `incident_id`, `action`, `statement`, `rationale`, `hypothesis_id`, `status` |
+| `debug_research_record` | Records external research findings (docs, issues, specs) tied to an incident, supporting or challenging hypotheses. | `incident_id`, `source_type`, `source_title`, `source_uri`, `relevant_summary`, `claim_supported_or_challenged` |
+| `debug_research_plan` | Decomposes error tokens and hypotheses into targeted research questions and source queries. | `incident_id`, `focus_areas` |
+| `debug_codebase_analyze` | Inspects project manifests (`package.json`, `pyproject.toml`), git blame, and diff histories safely. | `incident_id`, `analysis_type`, `target_file`, `repo_path`, `revision` |
 | `debug_research_evaluate` | Ranks external documentation sources and automatically detects contradictions or version gaps. | `incident_id`, `sources` |
 
 ### 🧪 4. Experiment Trees & Raw Telemetry
 | Tool | Description | Key Arguments |
 | :--- | :--- | :--- |
-| `debug_attempt_create` | Plans a strategy (`A`), experiment (`A1`), or nested variant (`A1A`). **Variants require `reason_for_difference`.** | `incident_id`, `parent_id`, `hypothesis_id`, `reason_for_difference` |
-| `debug_evidence_record` | Attaches raw, redacted observations (CLI stdout/stderr, stack traces, diffs) bounded at 64 KB. | `attempt_id`, `evidence_type`, `content`, `metadata` |
-| `debug_attempt_update` | Records execution lifecycle and outcomes (`pending`, `failed`, `partial`, `candidate`, `blocked`). | `id`, `execution_status`, `outcome`, `rationale` |
-| `debug_tree_read` | Renders the complete nested experiment hierarchy with status badges and truncation disclosure. | `incident_id`, `include_evidence` |
+| `debug_attempt_create` | Plans a strategy (`A`), experiment (`A1`), or nested variant (`A1A`). **Variants require `reason_for_difference`.** | `incident_id`, `node_kind`, `proposed_change`, `expected_observation`, `parent_experiment_id`, `reason_for_difference` |
+| `debug_evidence_record` | Attaches raw, redacted observations (CLI stdout/stderr, stack traces, diffs) bounded at 64 KB. | `evidence_type`, `content`, `incident_id`, `experiment_id`, `interpretation`, `metadata` |
+| `debug_attempt_update` | Records execution lifecycle and outcomes (`pending`, `failed`, `partial`, `candidate`, `blocked`). | `experiment_id`, `execution_status`, `outcome_status`, `interpretation`, `failure_reason` |
+| `debug_tree_read` | Renders the complete nested experiment hierarchy with status badges and truncation disclosure. | `incident_id`, `max_depth`, `include_evidence`, `format` |
 
 ### 🎯 5. Adaptive Decision Engine & Budgets
 | Tool | Description | Key Arguments |
 | :--- | :--- | :--- |
 | `debug_next_experiment_prepare` | Computes search space exhaustion, scores candidate hypotheses, and outputs **one recommended next action**. | `incident_id` |
-| `debug_budget_manage` | Inspects remaining exploration limits or records an audited budget bump override. | `incident_id`, `action`, `overrides` |
-| `debug_candidate_compare` | Renders a side-by-side proposal comparison matrix with heuristic trade-offs and duplicate warnings. | `incident_id`, `candidate_a`, `candidate_b` |
+| `debug_budget_manage` | Inspects remaining exploration limits or records an audited budget bump override. | `incident_id`, `action` (`view` \| `set_incident_override` \| `clear_override`), `overrides` |
+| `debug_candidate_compare` | Renders a side-by-side proposal comparison matrix with heuristic trade-offs and duplicate warnings. | `incident_id`, `candidate_experiment_ids`, `candidate_proposals` |
 
 ### ✅ 6. Verification, Export & Server Health
 | Tool | Description | Key Arguments |
 | :--- | :--- | :--- |
-| `debug_validation_record` | Validates fix against explicit acceptance criteria. **The only mechanism that yields `verified`.** | `incident_id`, `attempt_id`, `criteria_results`, `notes` |
-| `debug_data_export` | Exports full case data to JSON or interactive standalone HTML dashboards. | `incident_id`, `format` (`json` \| `html`) |
+| `debug_validation_record` | Validates fix against explicit acceptance criteria. **The only mechanism that yields `verified`.** | `incident_id`, `experiment_id`, `execution_result`, `criteria_results`, `evidence_ids`, `notes` |
+| `debug_data_export` | Exports full case data to JSON or interactive standalone HTML dashboards. | `incident_id`, `project_id`, `format` (`json` \| `html`), `out_file` |
 | `debug_server_health` | Reports SQLite storage stats, migration version (v4), vector count, and memory engine status. | None |
 
 ---
@@ -309,11 +310,11 @@ Family Strategy A: "Inspect and update native dynamic library binding"
 │   │   ↳ Reason for Difference: "Directly addresses undefined symbol observed in A1 output."
 │   │   ↳ Observation: Symbol resolved, but crashes on Windows x64 ABI calling convention mismatch.
 │   │
-│   └── A1AA: "Annotate exported symbols with __cdecl calling convention" ── [CANDIDATE]
+│   └── A1A1: "Annotate exported symbols with __cdecl calling convention" ── [CANDIDATE]
 │       │   ↳ Reason for Difference: "Aligns ABI calling convention between MSVC and Bun FFI runtime."
 │       │
 │       └── 🛡️ Validation Run val_892k1... ── [VERIFIED FIX]
-│           ↳ Acceptance Criteria: "All 138 unit tests and cross-platform FFI smoke suite exit with 0."
+│           ↳ Acceptance Criteria: "All 196 unit tests and cross-platform FFI smoke suite exit with 0."
 │
 └── Strategy Family B: "Fallback to pure JavaScript WebAssembly bundle" ── [SUPERSEDED]
 ```
@@ -332,8 +333,7 @@ Family Strategy A: "Inspect and update native dynamic library binding"
 ## 🚀 Quick Start & Setup
 
 ### Prerequisites
-- [Bun](https://bun.sh) ≥ 1.0 (built on `bun:sqlite` with native FTS5 and vector operations)
-- Node.js ≥ 18 (optional alternative)
+- [Bun](https://bun.sh) ≥ 1.0 (required runtime; uses `bun:sqlite` with native FTS5 and vector operations)
 - **Any MCP client, IDE, or CLI** (e.g. Claude Desktop, Cursor, Windsurf, Cline, Roo Code, OpenCode CLI, Antigravity IDE, etc.)
 
 ### Installation
@@ -346,7 +346,7 @@ cd adaptive-debugging-mcp
 # Install dependencies
 bun install
 
-# Run complete hermetic test suite (138 tests across 25 suites)
+# Run complete hermetic test suite (196 tests across 32 suites)
 bun test
 
 # Run stdio smoke verification (hermetic temp database)
@@ -472,16 +472,16 @@ Security and non-destructive operation are foundational architectural principles
 
 ## 🧪 Test Suite & Evaluations
 
-The codebase is validated by 138 hermetic tests across 25 suites, including unit, integration, and scenario-based adaptive evaluations:
+The codebase is validated by 196 hermetic tests across 32 suites, including unit, integration, and scenario-based adaptive evaluations:
 
 ```
-Ran 138 tests across 25 files. [3.24s]
-Pass: 138 | Fail: 0 | Assertions: 885 expect() calls
+Ran 196 tests across 32 files. [5.24s]
+Pass: 196 | Fail: 0 | Assertions: 1212 expect() calls
 ```
 
 ### Key Verified Behaviors:
 - **Restart Durability:** Store preserves all incident, hypothesis, tree, and evidence records across cold process restarts.
-- **Differentiated Variations:** Nested branching (`A → A1 → A1A → A1AA`) strictly preserves failure records and duplicate proximity penalties.
+- **Differentiated Variations:** Nested branching (`A → A1 → A1A → A1A1`) strictly preserves failure records and duplicate proximity penalties.
 - **Verification Integrity:** An attempt cannot be downgraded from `verified` by normal updates; only an explicit failing re-validation can regress it.
 - **Budget Exhaustion:** Hard limits on exploration depths, variants-per-parent, and strategy counts prevent runaway token usage.
 - **Semantic Hybrid Search:** Resolves related historical incidents even when error vocabularies and keywords diverge.
@@ -505,7 +505,8 @@ adaptive-debugging-mcp/
 │   ├── retrieval/           # Fingerprint normalizer, FTS5 BM25 search, vector embeddings
 │   ├── research/            # Documentation ranker, manifest analyzer, contradiction detector
 │   ├── security/            # High-performance regex secret redaction engine
-│   └── visual/              # Standalone HTML dashboard generator and visual data exporter
+│   ├── dashboard/           # Standalone HTML dashboard generator and visual telemetry
+│   └── cli/                 # CLI entrypoints for dashboard, backup, restore, verify, prune
 ├── plugin/                  # OpenCode v2 non-blocking observation plugin
 ├── antigravity/             # Antigravity IDE configuration, agents, skills, and rules
 ├── .opencode/               # Packaged OpenCode agents, skills, and slash commands
@@ -524,7 +525,7 @@ adaptive-debugging-mcp/
 Distributed under the **MIT License**. See `LICENSE` for details.
 
 - **Author & Maintainer:** [Akash Billawa](https://github.com/Akash-billawa)
-- **Contributions:** Pull requests and issues are welcome! Please ensure all 138 tests pass (`bun test`) and stdio smoke checks pass before opening a PR.
+- **Contributions:** Pull requests and issues are welcome! Please ensure all 196 tests pass (`bun test`) and stdio smoke checks pass before opening a PR.
 
 <p align="center">
   <sub>Built with precision for the next generation of autonomous AI software engineering.</sub>

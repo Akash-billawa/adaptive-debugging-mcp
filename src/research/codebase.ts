@@ -10,6 +10,22 @@ import type {
   GitDiffSummary,
 } from "./types.ts";
 
+// analyzeCodebase() is synchronous, so a module-level counter is safe: it is reset at the start of every call.
+let redactionHits = 0;
+
+/** Redact `text`, remembering that something was removed so the finding can report `secrets_redacted`. */
+function scrub(text: string): string {
+  const r = redact(text);
+  if (r.status === "redacted") redactionHits++;
+  return r.text;
+}
+
+/** Largest file file_snippet will read into memory. */
+const MAX_SNIPPET_FILE_BYTES = 2 * 1024 * 1024;
+
+/** A git revision / range: no leading "-" (it would be parsed as an option, e.g. --output=<file>), no spaces or control characters. */
+const SAFE_REVISION = /^[A-Za-z0-9_][A-Za-z0-9_.\/~^@{}:+-]*$/;
+
 /**
  * Parses package manifests (package.json, requirements.txt, pyproject.toml, Cargo.toml)
  * in the target directory to extract declared dependency versions and engine constraints.
@@ -185,7 +201,7 @@ export function getGitLog(
         commit_hash: parts[0].trim(),
         author: parts[1].trim(),
         date: parts[2].trim(),
-        message: redact(parts[3].trim()).text,
+        message: scrub(parts[3].trim()),
       });
     }
   }
@@ -225,7 +241,7 @@ export function getGitBlame(
         commit_hash: match[1],
         author: match[2].trim(),
         line_number: Number(match[4]),
-        content: redact(match[5]).text,
+        content: scrub(match[5]),
       });
     } else {
       // Fallback
@@ -233,7 +249,7 @@ export function getGitBlame(
         commit_hash: "unknown",
         author: "unknown",
         line_number: lineCounter++,
-        content: redact(line).text,
+        content: scrub(line),
       });
     }
   }
@@ -270,6 +286,9 @@ export function getGitDiff(
   if (targetFile) patchArgs.push("--", targetFile);
   const patchRes = runGit(repoPath, patchArgs);
 
+  // A bad revision used to look like an empty diff ("0 files changed"), which reads as "nothing changed".
+  const failure = !statRes.ok && !patchRes.ok ? (statRes.stderr || patchRes.stderr).trim().split(/\r?\n/)[0] : "";
+
   let snippet = patchRes.stdout ?? "";
   if (snippet.length > 4000) {
     snippet = snippet.slice(0, 4000) + "\n... [diff truncated]";
@@ -279,7 +298,8 @@ export function getGitDiff(
     files_changed: filesChanged,
     additions,
     deletions,
-    diff_snippet: redact(snippet).text,
+    diff_snippet: scrub(snippet),
+    ...(failure ? { error: scrub(failure) } : {}),
   };
 }
 
@@ -297,13 +317,24 @@ export function getFileSnippet(
     return `[File not found: ${targetFile}]`;
   }
   try {
-    const raw = fs.readFileSync(fullPath, "utf-8");
+    // The file must live inside repo_path. An absolute target_file or "../" used to read any file the server can
+    // (/etc/passwd, ~/.ssh/...), and symlinks are resolved so a link inside the repo cannot point out of it.
+    const realRoot = fs.realpathSync(repoPath);
+    const realFile = fs.realpathSync(fullPath);
+    const rel = path.relative(realRoot, realFile);
+    if (rel === "" || rel === ".." || rel.startsWith(`..${path.sep}`) || rel.startsWith("../") || path.isAbsolute(rel)) {
+      return `[Refused: ${targetFile} is outside repo_path]`;
+    }
+    const stat = fs.statSync(realFile);
+    if (!stat.isFile()) return `[Refused: ${targetFile} is not a regular file]`;
+    if (stat.size > MAX_SNIPPET_FILE_BYTES) return `[Refused: ${targetFile} is larger than ${MAX_SNIPPET_FILE_BYTES} bytes]`;
+    const raw = fs.readFileSync(realFile, "utf-8");
     const lines = raw.split(/\r?\n/);
     const startIdx = Math.max(0, lineStart - 1);
     const endIdx = Math.min(lines.length, Math.max(startIdx + 1, lineEnd));
     const slice = lines.slice(startIdx, endIdx);
     const numbered = slice.map((l, i) => `${startIdx + i + 1}: ${l}`).join("\n");
-    return redact(numbered).text;
+    return scrub(numbered);
   } catch (err: any) {
     return `[Failed to read file: ${err?.message ?? String(err)}]`;
   }
@@ -314,7 +345,7 @@ export function getFileSnippet(
  */
 export function analyzeCodebase(req: CodebaseAnalysisRequest): CodebaseFinding {
   const repoPath = req.repo_path ? path.resolve(req.repo_path) : process.cwd();
-  let secretsRedacted = false;
+  redactionHits = 0;
 
   switch (req.analysis_type) {
     case "manifest_versions": {
@@ -340,7 +371,7 @@ export function analyzeCodebase(req: CodebaseAnalysisRequest): CodebaseFinding {
         target_path: req.target_file ?? repoPath,
         summary,
         commits,
-        secrets_redacted: secretsRedacted,
+        secrets_redacted: redactionHits > 0,
         untrusted_data: true,
       };
     }
@@ -361,19 +392,30 @@ export function analyzeCodebase(req: CodebaseAnalysisRequest): CodebaseFinding {
         target_path: req.target_file,
         summary: `Blame for ${req.target_file} (${records.length} lines, contributors: ${authors.join(", ")}).`,
         blame_lines: records,
-        secrets_redacted: secretsRedacted,
+        secrets_redacted: redactionHits > 0,
         untrusted_data: true,
       };
     }
 
     case "git_diff": {
-      const diff = getGitDiff(repoPath, req.revision ?? "HEAD", req.target_file);
+      const revision = req.revision ?? "HEAD";
+      if (!SAFE_REVISION.test(revision)) {
+        return {
+          analysis_type: "git_diff",
+          summary: `Invalid revision ${JSON.stringify(revision)}: it must not start with "-" or contain whitespace.`,
+          secrets_redacted: false,
+          untrusted_data: true,
+        };
+      }
+      const diff = getGitDiff(repoPath, revision, req.target_file);
       return {
         analysis_type: "git_diff",
         target_path: req.target_file ?? repoPath,
-        summary: `Git diff against ${req.revision ?? "HEAD"}: ${diff.files_changed} files changed (+${diff.additions}, -${diff.deletions}).`,
+        summary: diff.error
+          ? `Git diff against ${revision} failed: ${diff.error}`
+          : `Git diff against ${revision}: ${diff.files_changed} files changed (+${diff.additions}, -${diff.deletions}).`,
         diff_summary: diff,
-        secrets_redacted: secretsRedacted,
+        secrets_redacted: redactionHits > 0,
         untrusted_data: true,
       };
     }
@@ -393,7 +435,7 @@ export function analyzeCodebase(req: CodebaseAnalysisRequest): CodebaseFinding {
         target_path: req.target_file,
         summary: `Extracted lines ${req.line_start ?? 1}-${req.line_end ?? 100} from ${req.target_file}.`,
         snippet,
-        secrets_redacted: secretsRedacted,
+        secrets_redacted: redactionHits > 0,
         untrusted_data: true,
       };
     }

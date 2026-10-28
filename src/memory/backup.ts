@@ -10,7 +10,7 @@
  */
 
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync, statSync, renameSync } from "node:fs";
 import { dirname, join, resolve, basename } from "node:path";
 import { createHash } from "node:crypto";
 import { resolveDbPath, openDatabase, runMigrations } from "./db.ts";
@@ -124,6 +124,10 @@ export function createBackup(options: {
   } else {
     targetPath = resolve(targetPath);
     mkdirSync(dirname(targetPath), { recursive: true });
+  }
+
+  if (resolve(targetPath) === resolve(sourceDbPath)) {
+    throw new Error(`Cannot backup database to itself: outPath matches sourceDbPath (${targetPath})`);
   }
 
   if (existsSync(targetPath)) {
@@ -272,31 +276,92 @@ export function restoreBackup(options: {
 }): RestoreResult {
   const backupPath = resolve(options.backupPath);
   const verify = verifyBackup(backupPath);
-  if (!verify.valid) {
+  if (!verify.ok) {
+    if (verify.manifest_matched === false) {
+      throw new Error(`Cannot restore backup with mismatched manifest SHA-256 (${backupPath})`);
+    }
     throw new Error(`Cannot restore invalid backup (${backupPath}): integrity check = ${verify.integrity_output}`);
   }
 
   const targetPath = resolveDbPath(options.targetDbPath);
   let safetyPath: string | null = null;
 
-  // If target database exists, make safety snapshot and clean WAL files
+  // If target database exists, make safety snapshot using VACUUM INTO after acquiring exclusive lock
   if (existsSync(targetPath)) {
-    if (options.createSafetySnapshot !== false) {
-      safetyPath = `${targetPath}.pre-restore-${Date.now()}.bak`;
-      copyFileSync(targetPath, safetyPath);
-    }
-    // Remove old WAL and SHM files to prevent stale checkpoint locks
-    for (const ext of ["-wal", "-shm"]) {
+    const checkDb = new Database(targetPath);
+    try {
+      checkDb.run("PRAGMA busy_timeout = 2000;");
       try {
-        rmSync(targetPath + ext, { force: true });
-      } catch {
-        /* ignore */
+        checkDb.run("BEGIN EXCLUSIVE;");
+        checkDb.run("ROLLBACK;");
+      } catch (err: any) {
+        throw new Error(
+          `Cannot restore into target database (${targetPath}): database is active or locked by another process: ${err?.message ?? String(err)}`,
+        );
       }
+
+      // Checkpoint WAL so any pending updates are incorporated
+      try {
+        checkDb.run("PRAGMA wal_checkpoint(TRUNCATE);");
+      } catch {
+        /* best effort */
+      }
+
+      if (options.createSafetySnapshot !== false) {
+        safetyPath = `${targetPath}.pre-restore-${Date.now()}.bak`;
+        if (existsSync(safetyPath)) rmSync(safetyPath, { force: true });
+        const escaped = safetyPath.replace(/'/g, "''");
+        checkDb.run(`VACUUM INTO '${escaped}'`);
+      }
+    } finally {
+      try {
+        checkDb.close();
+      } catch {}
     }
   }
 
+  // Restore via a temporary file and atomic swap
   mkdirSync(dirname(targetPath), { recursive: true });
-  copyFileSync(backupPath, targetPath);
+  const tempRestorePath = `${targetPath}.restore-${Date.now()}.tmp`;
+  try {
+    copyFileSync(backupPath, tempRestorePath);
+
+    // Verify temp file before replacing target
+    const tempCheck = new Database(tempRestorePath, { readonly: true });
+    try {
+      const integrity = tempCheck.query("PRAGMA integrity_check").get() as { integrity_check?: string; [key: string]: unknown };
+      const output = String(Object.values(integrity ?? {})[0] ?? "failed");
+      if (output !== "ok") {
+        throw new Error(`Restored database copy failed integrity check: ${output}`);
+      }
+    } finally {
+      tempCheck.close();
+    }
+
+    // Clean old WAL and SHM files
+    if (existsSync(targetPath)) {
+      for (const ext of ["-wal", "-shm"]) {
+        try {
+          rmSync(targetPath + ext, { force: true });
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    try {
+      renameSync(tempRestorePath, targetPath);
+    } catch {
+      copyFileSync(tempRestorePath, targetPath);
+      rmSync(tempRestorePath, { force: true });
+    }
+  } finally {
+    if (existsSync(tempRestorePath)) {
+      try {
+        rmSync(tempRestorePath, { force: true });
+      } catch {}
+    }
+  }
 
   // Open restored database, verify integrity, run migrations if newer schema needed
   const { db } = openDatabase(targetPath);
@@ -370,7 +435,13 @@ export function applyRetention(options: {
           );
         }
         if (pruneEv && evCount > 0) {
-          // Remove from evidence_fts and evidence
+          // Remove from evidence_content, evidence_fts and evidence
+          db.run(
+            `DELETE FROM evidence_content WHERE evidence_id IN (
+              SELECT evidence_id FROM evidence WHERE created_at < ? AND retention_class = 'transient'
+            )`,
+            [cutoffDate],
+          );
           db.run(
             `DELETE FROM evidence_fts WHERE evidence_id IN (
               SELECT evidence_id FROM evidence WHERE created_at < ? AND retention_class = 'transient'

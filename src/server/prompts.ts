@@ -90,8 +90,8 @@ export function getPromptHandler(
               type: "text",
               text:
                 `You are conducting an adaptive debugging investigation for incident '${incidentId}'.\n\n` +
-                `Initial Symptom: ${symptom}\n` +
-                (incident ? `Acceptance Criteria: ${incident.acceptance_criteria ?? "Pass reproduction test"}\n` : "") +
+                `Initial Symptom:\n<untrusted_data>\n${symptom}\n</untrusted_data>\n` +
+                (incident?.acceptance_criteria ? `Acceptance Criteria:\n<untrusted_data>\n${incident.acceptance_criteria}\n</untrusted_data>\n` : "") +
                 `\nMANDATORY INVESTIGATION SEQUENCE:\n` +
                 `1. Check Memory First: Call 'debug_history_search' with key error tokens or fingerprints to discover if similar failures occurred before.\n` +
                 `2. Form Competing Hypotheses: Call 'debug_hypothesis_manage' (op: create_hypothesis) with at least 2 distinct testable claims before fixing.\n` +
@@ -203,8 +203,8 @@ export function getPromptHandler(
                 `VERIFICATION RULES:\n` +
                 `1. A green command or successful edit is NOT a verified fix. You must test the original failure condition.\n` +
                 `2. Execute reproduction tests via host tools and observe results.\n` +
-                `3. Record validation with 'debug_validation_record' (resolution_decision: 'verified' if all pass, 'rejected' if fails).\n` +
-                `4. If validation passes, call 'debug_case_status_update' with status: 'resolved' and verification_id.\n`,
+                `3. Record validation with 'debug_validation_record' (with execution_result: 'pass', criteria_results with each criterion status: 'passed', and evidence_ids).\n` +
+                `4. If validation passes and receives resolution_decision: 'verified', call 'debug_case_status_update' with status: 'resolved' and verification_id: validation.validation_id.\n`,
             },
           },
         ],

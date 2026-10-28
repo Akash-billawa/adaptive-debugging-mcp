@@ -33,12 +33,6 @@ permissions:
     resource: "opencode --version*"
     effect: allow
   - action: shell
-    resource: "Select-Object*"
-    effect: allow
-  - action: shell
-    resource: "Start-Sleep*"
-    effect: allow
-  - action: shell
     resource: "bunx tsc --noEmit*"
     effect: allow
 ---

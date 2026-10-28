@@ -97,6 +97,30 @@ describe("Dashboard Generator", () => {
         actor: "tester",
       });
 
+      // Add a rejected hypothesis to verify rejected status handling
+      store.createHypothesis({
+        incident_id: inc.incident_id,
+        statement: "Database disk is full",
+        rationale: "Checked df -h and found 80% free",
+        actor: "tester",
+      });
+      const rejectedHypo = store.listHypotheses(inc.incident_id).find((h) => h.statement === "Database disk is full");
+      if (rejectedHypo) {
+        store.updateHypothesisStatus(rejectedHypo.hypothesis_id, "rejected", "verified df -h has ample space", "tester");
+      }
+
+      // Add a research reference
+      store.recordResearch({
+        incident_id: inc.incident_id,
+        source_title: "Upstream Service Outage Advisory",
+        source_uri: "https://status.payment.internal/incidents/123",
+        source_type: "incident_postmortem",
+        relevant_summary: "Rolling restarts caused transient 502 Bad Gateway responses",
+        reliability_note: "primary vendor status log",
+        claim_supported_or_challenged: "Supports upstream service restart hypothesis",
+        actor: "tester",
+      });
+
       const exp = store.createExperiment({
         incident_id: inc.incident_id,
         node_kind: "experiment",
@@ -124,6 +148,22 @@ describe("Dashboard Generator", () => {
       expect(html).not.toContain("<script>alert(1)</script>");
       expect(html).toContain(String.raw`\u003cscript>alert(1)\u003c/script>`);
 
+      // Verify hermeticity: zero external font or script dependencies
+      expect(html).not.toContain("fonts.googleapis.com");
+      expect(html).not.toContain("fonts.gstatic.com");
+      expect(html).not.toContain("cdn.jsdelivr.net");
+      expect(html).not.toContain("unpkg.com");
+      expect(html).not.toContain("cdnjs.cloudflare.com");
+      expect(html).toContain("font-family: system-ui");
+
+      // Verify hypothesis formatting (no NaN% and proper status classes)
+      expect(html).not.toContain("NaN%");
+      expect(html).toContain("pill-failed"); // rejected hypothesis styled as failed
+
+      // Verify research citations render title and summary
+      expect(html).toContain("Upstream Service Outage Advisory");
+      expect(html).toContain("Rolling restarts caused transient 502");
+
       // Verify essential sections exist
       expect(html).toContain("id=\"panel-overview\"");
       expect(html).toContain("id=\"panel-incidents\"");
@@ -133,11 +173,6 @@ describe("Dashboard Generator", () => {
       expect(html).toContain("id=\"evidenceContainer\"");
       expect(html).toContain("id=\"timelineContainer\"");
       expect(html).toContain("id=\"hypothesesContainer\"");
-
-      // Verify zero external JS dependencies (no React/Vue CDN script tags)
-      expect(html).not.toContain("cdn.jsdelivr.net");
-      expect(html).not.toContain("unpkg.com");
-      expect(html).not.toContain("cdnjs.cloudflare.com");
     } finally {
       store.db.close();
     }

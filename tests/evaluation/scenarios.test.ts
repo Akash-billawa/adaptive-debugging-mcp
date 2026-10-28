@@ -190,7 +190,8 @@ test("S7: a returning bug retrieves its previous investigation", async () => {
   }).incident;
   const a = mkExp(s, first.incident_id, { node_kind: "strategy", title: "refresh logic" });
   const a1 = mkExp(s, first.incident_id, { title: "prefetch token", parent_experiment_id: a.experiment_id });
-  const val = s.recordValidation({ incident_id: first.incident_id, experiment_id: a1.experiment_id, validation_plan: "no 401s for 30 min", criteria_results: [{ criteria: "no 401s", status: "passed" }], execution_result: "passed", evidence_ids: [], verified_by: "agent" });
+  const ev1 = s.recordEvidence({ project_id: first.project_id, incident_id: first.incident_id, experiment_id: a1.experiment_id, evidence_type: "stdout", content: "auth token renewed", capture_source: "agent" });
+  const val = s.recordValidation({ incident_id: first.incident_id, experiment_id: a1.experiment_id, validation_plan: "no 401s for 30 min", criteria_results: [{ criteria: "no 401s", status: "passed" }], execution_result: "passed", evidence_ids: [ev1.evidence.evidence_id], verified_by: "agent" });
   s.updateIncidentStatus(first.incident_id, "investigating", "validated", "agent");
   s.updateIncidentStatus(first.incident_id, "resolved", "verified", "agent", { verification_id: val.validation.validation_run_id });
   // Days later, the same error returns in a NEW incident
@@ -269,7 +270,8 @@ test("S11: passing all acceptance criteria verifies and resolves the incident", 
   const { s, inc } = store();
   const catalog = buildCatalog(ctx(s));
   const e1 = mkExp(s, inc.incident_id, { title: "the fix" });
-  const val = s.recordValidation({ incident_id: inc.incident_id, experiment_id: e1.experiment_id, validation_plan: "original repro passes + regression suite", criteria_results: [{ criteria: "repro passes", status: "passed" }, { criteria: "regression suite", status: "passed" }], execution_result: "passed", evidence_ids: [], verified_by: "agent" });
+  const ev11 = s.recordEvidence({ project_id: inc.project_id, incident_id: inc.incident_id, experiment_id: e1.experiment_id, evidence_type: "stdout", content: "clean test run", capture_source: "agent" });
+  const val = s.recordValidation({ incident_id: inc.incident_id, experiment_id: e1.experiment_id, validation_plan: "original repro passes + regression suite", criteria_results: [{ criteria: "repro passes", status: "passed" }, { criteria: "regression suite", status: "passed" }], execution_result: "passed", evidence_ids: [ev11.evidence.evidence_id], verified_by: "agent" });
   const r = await nextAction(s, inc.incident_id);
   s.updateIncidentStatus(inc.incident_id, "investigating", "fix validated; recording resolution", "agent");
   const resolve = await callTool(s, "debug_case_status_update", { incident_id: inc.incident_id, status: "resolved", verification_id: val.validation.validation_run_id, rationale: "acceptance criteria verified", actor: "user" });

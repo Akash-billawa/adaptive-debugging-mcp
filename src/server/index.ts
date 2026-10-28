@@ -24,6 +24,12 @@ function parseDbArg(): string | undefined {
   return undefined;
 }
 
+function parseExportHtmlArg(): string | undefined {
+  const i = process.argv.indexOf("--export-html");
+  if (i >= 0 && i + 1 < process.argv.length) return process.argv[i + 1];
+  return undefined;
+}
+
 async function main(): Promise<void> {
   const dbPath = parseDbArg() ?? process.env.ADAPTIVE_DEBUG_DB_PATH;
   let store: Store;
@@ -37,6 +43,26 @@ async function main(): Promise<void> {
     logToStderr("Memory is unavailable. Do NOT assume no history exists.");
     process.exit(1);
     return;
+  }
+
+  const exportHtmlPath = parseExportHtmlArg();
+  if (exportHtmlPath) {
+    try {
+      const { generateDashboardHtml } = await import("../dashboard/generator.ts");
+      const { writeFileSync, mkdirSync } = await import("node:fs");
+      const { resolve, dirname } = await import("node:path");
+      const html = generateDashboardHtml(store);
+      const absOut = resolve(exportHtmlPath);
+      mkdirSync(dirname(absOut), { recursive: true });
+      writeFileSync(absOut, html, "utf-8");
+      logToStderr(`exported dashboard HTML (${(html.length / 1024).toFixed(1)} KB) to ${absOut}`);
+      store.db.close();
+      process.exit(0);
+    } catch (err: any) {
+      logToStderr(`export-html failed: ${err?.message ?? String(err)}`);
+      store.db.close();
+      process.exit(1);
+    }
   }
 
   const catalog = buildCatalog({

@@ -5,7 +5,7 @@ import { redact } from "../security/redaction.ts";
 
 /** Build a safe FTS5 MATCH expression from a free-text query (OR of quoted tokens). */
 export function buildFtsQuery(query: string): string | null {
-  const raw = (query ?? "").trim();
+  const raw = (query ?? "").replace(/[-./\\]/g, " ").trim();
   if (!raw) return null;
   const tokens = raw
     .split(/\s+/)
@@ -52,6 +52,8 @@ export interface SearchInput {
   include_evidence?: boolean;
   semantic?: boolean;
   min_similarity?: number;
+  active_incident_id?: string | null;
+  exclude_incident_id?: string | null;
 }
 
 /**
@@ -66,30 +68,49 @@ export function searchHistory(store: Store, input: SearchInput): SearchOutcome {
     const matchedExps = new Map<string, Set<string>>();
     const similarityScores = new Map<string, number>();
 
+    const excludedIds = new Set<string>();
+    if (input.active_incident_id) excludedIds.add(input.active_incident_id);
+    if (input.exclude_incident_id) excludedIds.add(input.exclude_incident_id);
+
     const add = (incId: string, reason: string) => {
+      if (excludedIds.has(incId)) return;
       if (!reasons.has(incId)) reasons.set(incId, new Set());
       reasons.get(incId)!.add(reason);
     };
 
+    const pid = typeof input.project_id === "string" && !input.include_cross_project ? input.project_id : null;
+
     // 1) Exact fingerprints
     for (const fp of input.fingerprints ?? []) {
-      const rows = store.db
-        .query("SELECT incident_id FROM fingerprints WHERE fingerprint_value = ?")
-        .all(fp) as { incident_id: string }[];
+      const rows = pid
+        ? (store.db
+            .query("SELECT f.incident_id FROM fingerprints f JOIN incidents i ON i.incident_id = f.incident_id WHERE f.fingerprint_value = ? AND i.project_id = ?")
+            .all(fp, pid) as { incident_id: string }[])
+        : (store.db
+            .query("SELECT incident_id FROM fingerprints WHERE fingerprint_value = ?")
+            .all(fp) as { incident_id: string }[]);
       for (const r of rows) add(r.incident_id, "exact_fingerprint");
     }
 
     // 2) Full-text search (FTS5)
     const fts = buildFtsQuery(input.query ?? "");
     if (fts) {
-      const incRows = store.db
-        .query("SELECT incident_id FROM incident_fts WHERE incident_fts MATCH ?")
-        .all(fts) as { incident_id: string }[];
+      const incRows = pid
+        ? (store.db
+            .query("SELECT incident_id FROM incident_fts WHERE incident_fts MATCH ? AND project_id = ?")
+            .all(fts, pid) as { incident_id: string }[])
+        : (store.db
+            .query("SELECT incident_id FROM incident_fts WHERE incident_fts MATCH ?")
+            .all(fts) as { incident_id: string }[]);
       for (const r of incRows) add(r.incident_id, "full_text_incident");
 
-      const expRows = store.db
-        .query("SELECT incident_id, experiment_id FROM experiment_fts WHERE experiment_fts MATCH ?")
-        .all(fts) as { incident_id: string; experiment_id: string }[];
+      const expRows = pid
+        ? (store.db
+            .query("SELECT fts.incident_id, fts.experiment_id FROM experiment_fts fts JOIN incidents i ON i.incident_id = fts.incident_id WHERE experiment_fts MATCH ? AND i.project_id = ?")
+            .all(fts, pid) as { incident_id: string; experiment_id: string }[])
+        : (store.db
+            .query("SELECT incident_id, experiment_id FROM experiment_fts WHERE experiment_fts MATCH ?")
+            .all(fts) as { incident_id: string; experiment_id: string }[]);
       for (const r of expRows) {
         add(r.incident_id, "full_text_experiment");
         if (!matchedExps.has(r.incident_id)) matchedExps.set(r.incident_id, new Set());
@@ -106,6 +127,7 @@ export function searchHistory(store: Store, input: SearchInput): SearchOutcome {
           const semanticHits = searchSemantic(store, cleanQuery, {
             minSimilarity: input.min_similarity ?? 0.35,
             limit: 30,
+            projectId: pid ?? undefined,
           });
 
         for (const hit of semanticHits) {

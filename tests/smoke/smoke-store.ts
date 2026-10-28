@@ -29,7 +29,7 @@ console.log("outcome", upd.experiment.outcome_status);
 const ev = s.listEvidence({ experiment_id: a2.experiment.experiment_id });
 console.log("evidence redaction", ev[0].redaction_status, "content:", s.getEvidenceContent(ev[0].evidence_id)?.content.slice(0, 70));
 
-const val = s.recordValidation({ incident_id: incident.incident_id, experiment_id: a2a.experiment.experiment_id, validation_plan: "repro input must not crash", criteria_results: [{ criteria: "no crash", status: "passed" }], execution_result: "passed", evidence_ids: [], verified_by: "agent" });
+const val = s.recordValidation({ incident_id: incident.incident_id, experiment_id: a2a.experiment.experiment_id, validation_plan: "repro input must not crash", criteria_results: [{ criteria: "no crash", status: "passed" }], execution_result: "passed", evidence_ids: [ev[0].evidence_id], verified_by: "agent" });
 console.log("validation decision", val.decision, "experiment outcome", s.getExperiment(a2a.experiment.experiment_id)?.outcome_status);
 
 const res = searchHistory(s, { query: "crash parse undefined reading", project_id: incident.project_id, limit: 5 });

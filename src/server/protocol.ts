@@ -36,6 +36,13 @@ export interface ResourceDef {
   mimeType?: string;
 }
 
+export interface ResourceTemplateDef {
+  uriTemplate: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
 export interface PromptArgumentDef {
   name: string;
   description?: string;
@@ -59,6 +66,7 @@ export interface ToolCatalog {
   list(): ToolDef[];
   call(name: string, args: Record<string, unknown>): Promise<ToolResult>;
   listResources?(): ResourceDef[];
+  listResourceTemplates?(): ResourceTemplateDef[];
   readResource?(uri: string): Promise<{ contents: Array<{ uri: string; mimeType: string; text: string }> }> | { contents: Array<{ uri: string; mimeType: string; text: string }> };
   listPrompts?(): PromptDef[];
   getPrompt?(name: string, args: Record<string, string>): Promise<{ description?: string; messages: Array<{ role: string; content: { type: string; text: string } }> }> | { description?: string; messages: Array<{ role: string; content: { type: string; text: string } }> };
@@ -136,7 +144,13 @@ export async function handleMessage(
       try {
         const result = await catalog.call(params.name, params.arguments ?? {});
         return ok(id, result);
-      } catch (e) {
+      } catch (e: any) {
+        if (
+          e?.name === "UnknownToolError" ||
+          (e?.category === "NOT_FOUND" && typeof e?.message === "string" && e.message.startsWith("Unknown tool"))
+        ) {
+          return err(id, METHOD_NOT_FOUND, e.message ?? `Unknown tool: ${params.name}`);
+        }
         const r = e as { category?: string; message?: string; details?: unknown };
         const result: ToolResult = {
           content: [{ type: "text", text: `Error: ${r.message ?? "unknown error"}` }],
@@ -150,6 +164,9 @@ export async function handleMessage(
 
     case "resources/list":
       return ok(id, { resources: catalog.listResources ? catalog.listResources() : [] });
+
+    case "resources/templates/list":
+      return ok(id, { resourceTemplates: catalog.listResourceTemplates ? catalog.listResourceTemplates() : [] });
 
     case "resources/read": {
       const params = (req.params ?? {}) as { uri?: string };

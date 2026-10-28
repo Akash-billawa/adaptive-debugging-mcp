@@ -31,8 +31,9 @@ export const ALL_TOOLS: Tool[] = [
   ...researchTools,
 ];
 
-import { listResourceTemplates, readResourceHandler } from "./resources.ts";
+import { listResourceTemplates, listConcreteResources, readResourceHandler } from "./resources.ts";
 import { listPromptsCatalog, getPromptHandler } from "./prompts.ts";
+import { redactDeep } from "../security/redaction.ts";
 
 /** Build a callable catalog bound to a context (store, db path, logger). */
 export function buildCatalog(ctx: ToolContext): ToolCatalog {
@@ -48,9 +49,12 @@ export function buildCatalog(ctx: ToolContext): ToolCatalog {
       if (!tool) {
         throw new McpErrorNotDefined(name);
       }
+      const { value: redactedArgs } = redactDeep(args, {
+        skip: (path) => name === "debug_evidence_record" && path === "content",
+      });
       let payload: Record<string, unknown>;
       try {
-        payload = await tool.handle(ctx, args);
+        payload = await tool.handle(ctx, redactedArgs as Record<string, unknown>);
       } catch (e) {
         if (e instanceof ValidationArg) throw validationError(e.message);
         throw e;
@@ -62,7 +66,10 @@ export function buildCatalog(ctx: ToolContext): ToolCatalog {
       };
     },
     listResources() {
-      return listResourceTemplates(ctx.store);
+      return listConcreteResources(ctx.store);
+    },
+    listResourceTemplates() {
+      return listResourceTemplates();
     },
     readResource(uri: string) {
       return readResourceHandler(ctx.store, uri);

@@ -91,7 +91,7 @@ async function main(): Promise<void> {
 
       console.log(`Verifying backup: ${backupPath}...`);
       const res = verifyBackup(backupPath);
-      if (res.valid) {
+      if (res.ok) {
         console.log(`\n✓ Backup is VALID!`);
         console.log(`  Integrity: ${res.integrity_output}`);
         console.log(`  Schema:    v${res.schema_version}`);
@@ -100,7 +100,10 @@ async function main(): Promise<void> {
         console.log(`  Counts:    ${JSON.stringify(res.counts)}`);
         process.exit(0);
       } else {
-        console.error(`\n✗ Backup verification FAILED! Integrity: ${res.integrity_output}`);
+        const reason = res.valid && res.manifest_matched === false
+          ? "Manifest SHA-256 mismatch (tampered or mismatched backup)"
+          : `Integrity: ${res.integrity_output}`;
+        console.error(`\n✗ Backup verification FAILED! ${reason}`);
         process.exit(1);
       }
     }

@@ -123,4 +123,10 @@ Before closing or performing significant write batches, call `debug_next_experim
 | Close / reopen / block a case | `debug_case_status_update` |
 | Save a consulted source | `debug_research_record` |
 | Relate two records without merging | `debug_case_link` |
+| Compare candidate proposals | `debug_candidate_compare` |
+| Formulate research questions | `debug_research_plan` |
+| Evaluate external research credibility | `debug_research_evaluate` |
+| Inspect code snippets or manifests | `debug_codebase_analyze` |
+| Sync dense semantic vector index | `debug_semantic_index` |
+| Export incident tree or visual dashboard | `debug_data_export` |
 | Memory server status | `debug_server_health` |

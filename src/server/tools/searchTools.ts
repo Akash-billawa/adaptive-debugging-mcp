@@ -20,7 +20,8 @@ export const searchTools: Tool[] = [
           include_cross_project: { type: "boolean", description: "Include other projects (default false)", default: false },
           limit: { type: "number", description: "Max results", default: 10 },
           semantic: { type: "boolean", description: "Enable dense semantic vector similarity (default true)", default: true },
-          min_similarity: { type: "number", description: "Minimum cosine similarity threshold (default 0.25)", default: 0.25 },
+          min_similarity: { type: "number", description: "Minimum cosine similarity threshold (default 0.35)", default: 0.35 },
+          active_incident_id: str("Exclude this current active incident from prior history results"),
         },
         [],
       ),
@@ -35,7 +36,8 @@ export const searchTools: Tool[] = [
         include_cross_project: optBool(args, "include_cross_project", false),
         limit: Number(args.limit ?? 10),
         semantic: optBool(args, "semantic", true),
-        min_similarity: typeof args.min_similarity === "number" ? args.min_similarity : 0.25,
+        min_similarity: typeof args.min_similarity === "number" ? args.min_similarity : 0.35,
+        active_incident_id: optStr(args, "active_incident_id"),
       });
 
       if (!res.complete) {

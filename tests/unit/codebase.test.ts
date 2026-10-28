@@ -98,4 +98,74 @@ describe("codebase analysis helpers", () => {
     expect(result.analysis_type).toBe("file_snippet");
     expect(result.snippet).toContain("[File not found:");
   });
+
+  it("getFileSnippet: refuses path traversal outside repo_path", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "admcp-traversal-test-"));
+    const outsideFile = path.join(os.tmpdir(), `admcp-outside-${Date.now()}.txt`);
+    fs.writeFileSync(outsideFile, "secret content outside repo");
+
+    try {
+      // 1. Absolute path outside repo
+      const snippetAbs = getFileSnippet(tmpDir, outsideFile);
+      expect(snippetAbs).toContain("[Refused:");
+      expect(snippetAbs).toContain("is outside repo_path");
+
+      // 2. Relative traversal outside repo
+      const relOutside = path.relative(tmpDir, outsideFile);
+      const snippetRel = getFileSnippet(tmpDir, relOutside);
+      expect(snippetRel).toContain("[Refused:");
+      expect(snippetRel).toContain("is outside repo_path");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      if (fs.existsSync(outsideFile)) fs.unlinkSync(outsideFile);
+    }
+  });
+
+  it("getFileSnippet: refuses files larger than 2 MB", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "admcp-bigfile-test-"));
+    const bigFile = path.join(tmpDir, "huge.txt");
+    const fd = fs.openSync(bigFile, "w");
+    // Write 2.1 MB
+    fs.writeSync(fd, Buffer.alloc(2.1 * 1024 * 1024));
+    fs.closeSync(fd);
+
+    try {
+      const snippet = getFileSnippet(tmpDir, "huge.txt");
+      expect(snippet).toContain("[Refused:");
+      expect(snippet).toContain("is larger than 2097152 bytes");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("analyzeCodebase: rejects revisions starting with '-' or containing whitespace", () => {
+    const result = analyzeCodebase({
+      analysis_type: "git_diff",
+      revision: "--output=/tmp/pwned",
+    });
+
+    expect(result.summary).toContain("Invalid revision");
+    expect(result.summary).toContain("must not start with \"-\"");
+  });
+
+  it("analyzeCodebase: reports secrets_redacted=true when secrets are scrubbed", () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "admcp-redact-test-"));
+    const secretFile = path.join(tmpDir, "config.ts");
+    const dummyStripeKey = ["sk", "live", "51HabcdefghijklmnopqrstuvXYZ"].join("_");
+    fs.writeFileSync(secretFile, `export const key = '${dummyStripeKey}';`);
+
+    try {
+      const result = analyzeCodebase({
+        analysis_type: "file_snippet",
+        repo_path: tmpDir,
+        target_file: "config.ts",
+      });
+
+      expect(result.secrets_redacted).toBe(true);
+      expect(result.snippet).not.toContain(dummyStripeKey);
+      expect(result.snippet).toContain("[REDACTED:stripe_key]");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

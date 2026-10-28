@@ -28,11 +28,19 @@ function log(msg: string): void {
 }
 
 let store: Store | null = null;
+let currentDbPath: string | undefined = undefined;
+
 function getStore(): Store | null {
-  if (store) return store;
+  const targetPath = process.env.ADAPTIVE_DEBUG_DB_PATH;
+  if (store && currentDbPath === targetPath) return store;
+  if (store) {
+    try { store.db.close(); } catch {}
+    store = null;
+  }
   try {
-    const { db } = openDatabase(process.env.ADAPTIVE_DEBUG_DB_PATH);
+    const { db } = openDatabase(targetPath);
     store = new Store(db);
+    currentDbPath = targetPath;
     return store;
   } catch (e) {
     log(`storage unavailable; observations will be skipped: ${e instanceof Error ? e.message : String(e)}`);
@@ -49,6 +57,28 @@ function safeStringify(value: unknown, maxLen = 2048): string {
   }
 }
 
+let activeIncidentId: string | null = null;
+let activeExperimentId: string | null = null;
+
+export function setActiveIncident(incidentId: string | null, experimentId?: string | null): void {
+  activeIncidentId = incidentId;
+  activeExperimentId = experimentId ?? null;
+}
+
+export function getActiveIncident(): { incidentId: string | null; experimentId: string | null } {
+  return { incidentId: activeIncidentId, experimentId: activeExperimentId };
+}
+
+export function associateObservation(
+  observationId: string,
+  incidentId: string,
+  experimentId?: string | null,
+): void {
+  const s = getStore();
+  if (!s) return;
+  s.associateObservation(observationId, incidentId, experimentId);
+}
+
 function record(kind: string, eventKey: string, fields: {
   sessionId?: string | null;
   tool?: string | null;
@@ -56,11 +86,29 @@ function record(kind: string, eventKey: string, fields: {
   outputSummary?: string | null;
   status?: string | null;
   captureComplete?: boolean;
-}): void {
+  incidentId?: string | null;
+  experimentId?: string | null;
+}): { observation_id: string; duplicate: boolean } | null {
   // Fire-and-forget: persistence failures never break the host workflow.
   try {
     const s = getStore();
-    if (!s) return;
+    if (!s) return null;
+
+    let incId = fields.incidentId ?? activeIncidentId;
+    let expId = fields.experimentId ?? activeExperimentId;
+    if (!incId) {
+      try {
+        const row = s.db
+          .query(
+            "SELECT incident_id FROM incidents WHERE status NOT IN ('resolved', 'dormant') ORDER BY updated_at DESC LIMIT 1",
+          )
+          .get() as { incident_id: string } | null;
+        if (row) incId = row.incident_id;
+      } catch {
+        // Safe fallback: leave unassociated
+      }
+    }
+
     const res = s.recordObservation({
       event_key: eventKey,
       kind,
@@ -69,11 +117,15 @@ function record(kind: string, eventKey: string, fields: {
       args_summary: fields.argsSummary ?? null,
       output_summary: fields.outputSummary ?? null,
       status: fields.status ?? null,
+      incident_id: incId ?? null,
+      experiment_id: expId ?? null,
       capture_complete: fields.captureComplete ?? true,
     });
     if (!res.duplicate) log(`recorded ${kind}${fields.tool ? ` (${fields.tool})` : ""}`);
+    return res;
   } catch (e) {
     log(`failed to record ${kind}: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
   }
 }
 
@@ -88,26 +140,62 @@ function isMemoryOperation(tool: unknown, argsText: string | null): boolean {
 }
 
 // --- before/after correlation + idempotency -------------------------------
-// The v2 tool hooks do not document a call id, so we correlate before/after by
-// (tool, args) and reuse the generated id, which also dedups hook retries.
-const pendingCalls = new Map<string, string>();
+// Correlate before/after by (tool, args) using a FIFO queue so repeated executions
+// (e.g. repeated test runs) receive unique call IDs and are never dropped as duplicates.
+interface PendingCall {
+  id: string;
+  timestamp: number;
+}
+const pendingCalls = new Map<string, PendingCall[]>();
 const MAX_TRACKED_CALLS = 2000;
+const CALL_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 function callKey(tool: string, argsText: string | null): string {
   return `${tool}::${(argsText ?? "").slice(0, 256)}`;
 }
+
 function newCallId(): string {
   return `call_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
-function trackedCallId(tool: string, argsText: string | null): string {
-  const k = callKey(tool, argsText);
-  let id = pendingCalls.get(k);
-  if (!id) {
-    id = newCallId();
-    if (pendingCalls.size > MAX_TRACKED_CALLS) pendingCalls.clear();
-    pendingCalls.set(k, id);
+
+function prunePendingCalls(): void {
+  const now = Date.now();
+  for (const [k, calls] of pendingCalls.entries()) {
+    const fresh = calls.filter((c) => now - c.timestamp < CALL_TTL_MS);
+    if (fresh.length === 0) {
+      pendingCalls.delete(k);
+    } else {
+      pendingCalls.set(k, fresh);
+    }
   }
+}
+
+function pushCallId(tool: string, argsText: string | null, explicitId?: string | null): string {
+  if (explicitId) return explicitId;
+  const k = callKey(tool, argsText);
+  const id = newCallId();
+  if (pendingCalls.size > MAX_TRACKED_CALLS) {
+    prunePendingCalls();
+    if (pendingCalls.size > MAX_TRACKED_CALLS) pendingCalls.clear();
+  }
+  const queue = pendingCalls.get(k) ?? [];
+  queue.push({ id, timestamp: Date.now() });
+  pendingCalls.set(k, queue);
   return id;
+}
+
+function popCallId(tool: string, argsText: string | null, explicitId?: string | null): string {
+  if (explicitId) return explicitId;
+  const k = callKey(tool, argsText);
+  const queue = pendingCalls.get(k);
+  if (!queue || queue.length === 0) {
+    return newCallId();
+  }
+  const item = queue.shift()!;
+  if (queue.length === 0) {
+    pendingCalls.delete(k);
+  }
+  return item.id;
 }
 
 function sessionIdOf(event: any): string | null {
@@ -115,17 +203,6 @@ function sessionIdOf(event: any): string | null {
 }
 
 // --- Session-level failure events -------------------------------------------
-// OpenCode v2.0.27 delivers events wrapped in an envelope:
-//   {id, created, type, durable:{...}, location:{...}, data:{...}}
-// and for the failure signals it ACTUALLY publishes, the session id is nested
-// at `data.sessionID` - there is no top-level sessionID.
-//
-// `session.error` is present in the host's event registry but is NOT published
-// for provider/transport failures. A live session against a local 401 responder
-// delivered 68 events containing session.execution.failed and session.step.failed
-// and zero session.error. Watching only "session.error" therefore never fired in
-// practice, so the event path was dead code. We keep session.error in the set
-// (harmless, and forward-compatible) and add the two events that do fire.
 const FAILURE_EVENT_TYPES = new Set<string>([
   "session.error",
   "session.execution.failed",
@@ -153,12 +230,15 @@ const definition = Plugin.define({
         const tool = event?.tool ?? null;
         const argsText = event?.input == null ? null : safeStringify(event.input, 1024);
         if (isMemoryOperation(tool, argsText)) return;
-        const cid = trackedCallId(String(tool ?? "?"), argsText);
+        const explicitId = event?.callID ?? event?.call_id ?? event?.id ?? event?.toolCallId ?? null;
+        const cid = pushCallId(String(tool ?? "?"), argsText, explicitId);
         record("tool.execute.before", `before:${cid}`, {
           sessionId: sessionIdOf(event),
           tool: typeof tool === "string" ? tool : null,
           argsSummary: argsText,
           captureComplete: true,
+          incidentId: event?.incidentId ?? event?.incident_id ?? null,
+          experimentId: event?.experimentId ?? event?.experiment_id ?? null,
         });
       } catch (e) {
         log(`before-hook error (ignored): ${e instanceof Error ? e.message : String(e)}`);
@@ -175,7 +255,8 @@ const definition = Plugin.define({
           status === "error"
             ? event?.error == null ? null : safeStringify(event.error, 4096)
             : event?.result == null ? null : safeStringify(event.result, 4096);
-        const cid = trackedCallId(String(tool ?? "?"), argsText);
+        const explicitId = event?.callID ?? event?.call_id ?? event?.id ?? event?.toolCallId ?? null;
+        const cid = popCallId(String(tool ?? "?"), argsText, explicitId);
         record("tool.execute.after", `after:${cid}`, {
           sessionId: sessionIdOf(event),
           tool: typeof tool === "string" ? tool : null,
@@ -183,6 +264,8 @@ const definition = Plugin.define({
           outputSummary: resultText,
           status,
           captureComplete: status !== null,
+          incidentId: event?.incidentId ?? event?.incident_id ?? null,
+          experimentId: event?.experimentId ?? event?.experiment_id ?? null,
         });
       } catch (e) {
         log(`after-hook error (ignored): ${e instanceof Error ? e.message : String(e)}`);
@@ -234,12 +317,15 @@ const v1Server = async () => {
         const argsText = args === undefined || args === null ? null : safeStringify(args, 1024);
         if (isMemoryOperation(tool, argsText)) return;
         const callId = pick(input, output, "callID", "call_id", "id") as string | undefined;
-        const key = `before:${callId ?? `v1:${tool}:${argsText}:${Date.now()}`}`;
+        const cid = pushCallId(String(tool ?? "?"), argsText, callId ?? null);
+        const key = `before:${cid}`;
         record("tool.execute.before", key, {
           sessionId: (pick(input, output, "sessionID", "session_id", "session") as string | undefined) ?? null,
           tool: typeof tool === "string" ? tool : null,
           argsSummary: argsText,
           captureComplete: !!callId,
+          incidentId: (pick(input, output, "incidentId", "incident_id") as string | undefined) ?? null,
+          experimentId: (pick(input, output, "experimentId", "experiment_id") as string | undefined) ?? null,
         });
       } catch (e) {
         log(`before-hook error (ignored): ${e instanceof Error ? e.message : String(e)}`);
@@ -255,13 +341,16 @@ const v1Server = async () => {
         const result = pick(input, output, "output", "result", "content");
         const outText = result === undefined || result === null ? null : safeStringify(result, 4096);
         const callId = pick(input, output, "callID", "call_id", "id") as string | undefined;
-        const key = `after:${callId ?? `v1:${tool}:${argsText}:${Date.now()}`}`;
+        const cid = popCallId(String(tool ?? "?"), argsText, callId ?? null);
+        const key = `after:${cid}`;
         record("tool.execute.after", key, {
           sessionId: (pick(input, output, "sessionID", "session_id", "session") as string | undefined) ?? null,
           tool: typeof tool === "string" ? tool : null,
           argsSummary: argsText,
           outputSummary: outText,
           captureComplete: result !== undefined,
+          incidentId: (pick(input, output, "incidentId", "incident_id") as string | undefined) ?? null,
+          experimentId: (pick(input, output, "experimentId", "experiment_id") as string | undefined) ?? null,
         });
       } catch (e) {
         log(`after-hook error (ignored): ${e instanceof Error ? e.message : String(e)}`);
@@ -278,6 +367,8 @@ const v1Server = async () => {
             sessionId,
             outputSummary: safeStringify(ev, 2048),
             captureComplete: !!ev,
+            incidentId: (pick(ev, null, "incidentId", "incident_id") as string | undefined) ?? null,
+            experimentId: (pick(ev, null, "experimentId", "experiment_id") as string | undefined) ?? null,
           });
         }
       } catch (e) {
@@ -291,4 +382,7 @@ const v1Server = async () => {
 export default {
   ...definition,
   server: v1Server,
+  associateObservation,
+  setActiveIncident,
+  getActiveIncident,
 };

@@ -5,9 +5,64 @@ import { isOneOf, RELATIONSHIP_TYPES } from "../../vocab.ts";
 import { readSchemaVersion, SCHEMA_VERSION } from "../../memory/schema.ts";
 import { generateDashboardHtml } from "../../dashboard/generator.ts";
 import { writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import * as path from "node:path";
+import { tmpdir } from "node:os";
 
 const REL_ENUM = [...RELATIONSHIP_TYPES];
+
+function validateAndWriteExport(
+  outFile: string,
+  content: string,
+  ctx: ToolContext,
+  projectId?: string,
+): string {
+  const allowedRoots: string[] = [
+    path.resolve(tmpdir()),
+    path.resolve(process.cwd()),
+    path.resolve(process.cwd(), "exports"),
+  ];
+
+  if (process.env.ADM_EXPORT_DIR) {
+    allowedRoots.push(path.resolve(process.env.ADM_EXPORT_DIR));
+  }
+
+  if (ctx.dbPath && ctx.dbPath !== ":memory:") {
+    allowedRoots.push(path.resolve(path.dirname(ctx.dbPath)));
+  }
+
+  if (projectId) {
+    const proj = ctx.store.getProject(projectId);
+    if (proj?.canonical_root) {
+      allowedRoots.push(path.resolve(proj.canonical_root));
+    }
+  }
+
+  const resolvedOut = path.resolve(outFile);
+
+  const isSubpath = (parent: string, child: string) => {
+    const rel = path.relative(parent, child);
+    return rel === "" || (!rel.startsWith("..") && !rel.startsWith(`..${path.sep}`) && !rel.startsWith("../") && !path.isAbsolute(rel));
+  };
+
+  const isAllowed = allowedRoots.some((root) => isSubpath(root, resolvedOut));
+  if (!isAllowed) {
+    throw validationError(`out_file must be within an allowed export directory: ${outFile}`);
+  }
+
+  const targetDir = path.dirname(resolvedOut);
+  mkdirSync(targetDir, { recursive: true });
+
+  try {
+    writeFileSync(resolvedOut, content, { flag: "wx", encoding: "utf-8" });
+  } catch (err: any) {
+    if (err?.code === "EEXIST") {
+      throw validationError(`out_file already exists and cannot be overwritten: ${outFile}`);
+    }
+    throw err;
+  }
+
+  return resolvedOut;
+}
 
 export const metaTools: Tool[] = [
   {
@@ -69,6 +124,12 @@ export const metaTools: Tool[] = [
       const format = optStr(args, "format") ?? "json";
       const out_file = optStr(args, "out_file");
 
+      let effectiveProjectId = project_id;
+      if (incident_id && !effectiveProjectId) {
+        const inc = ctx.store.getIncidentOrFail(incident_id);
+        effectiveProjectId = inc.project_id;
+      }
+
       if (format === "html") {
         const html = generateDashboardHtml(ctx.store, {
           projectId: project_id ?? undefined,
@@ -76,14 +137,13 @@ export const metaTools: Tool[] = [
         });
 
         if (out_file) {
-          mkdirSync(dirname(out_file), { recursive: true });
-          writeFileSync(out_file, html, "utf-8");
+          const writtenPath = validateAndWriteExport(out_file, html, ctx, effectiveProjectId);
           return {
             ok: true,
             format: "html",
-            out_file,
+            out_file: writtenPath,
             html_length: html.length,
-            summary: `Interactive visual dashboard exported successfully to ${out_file}`,
+            summary: `Interactive visual dashboard exported successfully to ${writtenPath}`,
           };
         }
 
@@ -135,12 +195,11 @@ export const metaTools: Tool[] = [
       }
 
       if (out_file) {
-        mkdirSync(dirname(out_file), { recursive: true });
-        writeFileSync(out_file, JSON.stringify(exportPayload, null, 2), "utf-8");
+        const writtenPath = validateAndWriteExport(out_file, JSON.stringify(exportPayload, null, 2), ctx, effectiveProjectId);
         return {
           ...exportPayload,
-          out_file,
-          summary: `JSON export written successfully to ${out_file}`,
+          out_file: writtenPath,
+          summary: `JSON export written successfully to ${writtenPath}`,
         };
       }
 
@@ -166,12 +225,19 @@ export const metaTools: Tool[] = [
         checks.evidence = count("SELECT COUNT(*) c FROM evidence");
         checks.timeline_events = count("SELECT COUNT(*) c FROM timeline_events");
         checks.schema_version = readSchemaVersion(ctx.store.db);
-        // Write probe (transaction)
-        const p = ctx.store.db.transaction(() => {
-          ctx.store.db.query("SELECT 1").get();
-          return true;
-        })();
-        checks.write_ready = p === true;
+        // Write probe: test actual write readiness by writing to the meta table in a transaction
+        let writeOk = false;
+        try {
+          ctx.store.db.transaction(() => {
+            ctx.store.db
+              .query("INSERT OR REPLACE INTO meta (key, value) VALUES ('_health_check_probe', ?)")
+              .run(new Date().toISOString());
+            writeOk = true;
+          })();
+        } catch {
+          writeOk = false;
+        }
+        checks.write_ready = writeOk;
         checks.fts = (() => {
           try {
             ctx.store.db.query("SELECT count(*) c FROM incident_fts").get();

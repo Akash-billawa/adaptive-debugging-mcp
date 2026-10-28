@@ -163,7 +163,7 @@ try {
   check("variant A1A label", a1a.structuredContent?.display_label === "A1A", a1a.structuredContent);
 
   // 7) evidence + failed outcome
-  await callTool("debug_evidence_record", { project_id: start.structuredContent?.project_id, incident_id: incidentId, experiment_id: a1id, evidence_type: "stderr", content: "TypeError: reading 'id' line 42. token=sk-SECRETvalue1234567890abcd", interpretation: "still crashes; body not parsed", capture_source: "agent" }, 9);
+  const evRes = await callTool("debug_evidence_record", { project_id: start.structuredContent?.project_id, incident_id: incidentId, experiment_id: a1id, evidence_type: "stderr", content: "TypeError: reading 'id' line 42. token=sk-SECRETvalue1234567890abcd", interpretation: "still crashes; body not parsed", capture_source: "agent" }, 9);
   const upd = await callTool("debug_attempt_update", { attempt_id: a1id, execution_status: "completed", outcome_status: "failed", actual_observation: "still crashes at parse", failure_reason: "req.body undefined", actor: "agent" }, 10);
   check("attempt updated failed", upd.structuredContent?.outcome_status === "failed", upd.structuredContent);
 
@@ -176,7 +176,7 @@ try {
     incident_id: incidentId, experiment_id: a1a.structuredContent.experiment_id,
     validation_plan: "malformed payload returns 400, no crash",
     criteria_results: [{ criteria: "malformed payload returns 400", status: "passed" }, { criteria: "no crash", status: "passed" }],
-    execution_result: "passed", reproduced_before: true, verified_by: "agent",
+    execution_result: "passed", evidence_ids: [evRes.structuredContent.evidence_id], reproduced_before: true, verified_by: "agent",
   }, 12);
   check("validation verified", valRes.structuredContent?.verified === true && valRes.structuredContent?.decision === "verified", valRes.structuredContent);
 
@@ -243,9 +243,15 @@ try {
   // 18) resources/list and resources/read over real protocol
   rpcWrite({ jsonrpc: "2.0", id: 25, method: "resources/list" });
   const resList = await readResponse(25);
-  check("resources/list returns templates and active incident",
-    Array.isArray(resList.result?.resources) && resList.result?.resources?.length >= 4,
+  check("resources/list returns concrete resources for active incident",
+    Array.isArray(resList.result?.resources) && resList.result?.resources?.length >= 3,
     resList.result);
+
+  rpcWrite({ jsonrpc: "2.0", id: 251, method: "resources/templates/list" });
+  const tmplList = await readResponse(251);
+  check("resources/templates/list returns resourceTemplates",
+    Array.isArray(tmplList.result?.resourceTemplates) && tmplList.result?.resourceTemplates?.length >= 1,
+    tmplList.result);
 
   rpcWrite({ jsonrpc: "2.0", id: 26, method: "resources/read", params: { uri: `debug://incident/${incidentId}/summary` } });
   const resRead = await readResponse(26);

@@ -101,9 +101,8 @@ export const planTools: Tool[] = [
         const id = reqStr(args, "id");
         const status = reqStr(args, "status");
         const rationale = reqStr(args, "rationale");
-        if (!isOneOf(STRATEGY_STATUS, status)) throw validationError(`invalid strategy status: ${status}`);
-        ctx.store.db.query("UPDATE strategies SET status = ?, updated_at = ? WHERE strategy_id = ?").run(status, new Date().toISOString(), id);
-        return { ok: true, strategy_id: id, status };
+        const strat = ctx.store.updateStrategyStatus(id, status, rationale, actor);
+        return { ok: true, strategy_id: id, status: strat.status };
       }
       throw validationError(`unknown op: ${op}`);
     },

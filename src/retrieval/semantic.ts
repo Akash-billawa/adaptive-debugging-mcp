@@ -156,21 +156,33 @@ export function searchSemantic(
     limit?: number;
     vectorizer?: EmbeddingProvider;
     entityType?: "incident" | "experiment";
+    projectId?: string | null;
   },
 ): SemanticHit[] {
   const vectorizer = options?.vectorizer ?? defaultVectorizer;
-  const minSim = options?.minSimilarity ?? 0.25;
+  const minSim = options?.minSimilarity ?? 0.35;
   const limit = Math.max(1, Math.min(100, options?.limit ?? 20));
 
   const queryVector = vectorizer.embed(query);
 
-  let sql = "SELECT entity_type, entity_id, vector_json FROM embeddings WHERE model_name = ?";
+  let sql = "SELECT e.entity_type, e.entity_id, e.vector_json FROM embeddings e";
   const params: any[] = [vectorizer.modelName];
+  const where: string[] = ["e.model_name = ?"];
+
+  if (options?.projectId) {
+    sql += ` LEFT JOIN incidents i ON (e.entity_type = 'incident' AND i.incident_id = e.entity_id)
+             LEFT JOIN experiments exp ON (e.entity_type = 'experiment' AND exp.experiment_id = e.entity_id)
+             LEFT JOIN incidents i2 ON (e.entity_type = 'experiment' AND i2.incident_id = exp.incident_id)`;
+    where.push("(i.project_id = ? OR i2.project_id = ?)");
+    params.push(options.projectId, options.projectId);
+  }
 
   if (options?.entityType) {
-    sql += " AND entity_type = ?";
+    where.push("e.entity_type = ?");
     params.push(options.entityType);
   }
+
+  sql += ` WHERE ${where.join(" AND ")}`;
 
   const rows = store.db.query(sql).all(...params) as {
     entity_type: "incident" | "experiment" | "evidence";

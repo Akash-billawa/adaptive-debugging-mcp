@@ -107,7 +107,13 @@ export interface FamilyUsage {
   root_id: string;
   root_label: string | null;
   root_kind: string;
-  attempts: number; // non-strategy members
+  /**
+   * Base attempts in this family (non-strategy, NON-variant nodes). Variants are deliberately
+   * excluded: they are bounded by max_variants_per_parent and max_refinement_depth (and still count toward
+   * max_total_experiments). Counting them here made the documented loop A1, A2, A3 -> research -> A1A
+   * impossible, because the family cap (default 3) was already full when the first variant was proposed.
+   */
+  attempts: number;
 }
 
 export interface BudgetUsage {
@@ -135,7 +141,7 @@ export function computeBudgetUsage(experiments: Experiment[], incident: Incident
       root_kind: root?.node_kind ?? e.node_kind,
       attempts: 0,
     };
-    fam.attempts++;
+    if (e.node_kind !== "variant") fam.attempts++;
     families.set(key, fam);
   }
   const created = Date.parse(incident.created_at);
@@ -193,8 +199,8 @@ export function evaluateNewExperimentBudget(
   if (total >= 1 && config.max_total_experiments - total <= Math.max(1, Math.round(config.max_total_experiments * 0.25)))
     warnings.push(`approaching total experiment budget: ${total}/${config.max_total_experiments}`);
 
-  // Per-family attempts
-  if (newNode.parent_family_root_id) {
+  // Per-family attempts (variants are refinements of an existing attempt and are bounded below instead)
+  if (newNode.parent_family_root_id && newNode.node_kind !== "variant") {
     const fam = usage.families.find((f) => f.root_id === newNode.parent_family_root_id);
     const famCount = fam?.attempts ?? 0;
     if (famCount >= config.max_experiments_per_family) {
@@ -203,7 +209,7 @@ export function evaluateNewExperimentBudget(
           limit_name: "max_experiments_per_family",
           limit: config.max_experiments_per_family,
           current: famCount,
-          message: `Strategy-family budget reached: family ${fam?.root_label ?? newNode.parent_family_root_id} has ${famCount} attempts (limit ${config.max_experiments_per_family}). Raise the budget (debug_budget_manage), refine within an existing attempt, or open a new strategy family.`,
+          message: `Strategy-family budget reached: family ${fam?.root_label ?? newNode.parent_family_root_id} has ${famCount} attempts (limit ${config.max_experiments_per_family}). Raise the budget (debug_budget_manage), refine an existing attempt with a variant, or open a new strategy family.`,
         },
         warnings,
       };

@@ -9,7 +9,7 @@
  */
 import type { Experiment, Hypothesis, Incident, ResearchReference, Strategy, ValidationRun, Evidence } from "../types.ts";
 import type { BudgetConfig, BudgetUsage } from "./budgets.ts";
-import { assessExhaustion, type ExhaustionAssessment } from "./exhaustion.ts";
+import { assessExhaustion, refinableAttempts, researchSinceLastBaseFailure, type ExhaustionAssessment } from "./exhaustion.ts";
 import { rankRefinementCandidates, untestedLiveHypotheses, type RankedCandidate } from "./ranking.ts";
 
 export type NextActionKind =
@@ -20,6 +20,7 @@ export type NextActionKind =
   | "develop_new_strategy"
   | "request_missing_info_or_approval"
   | "stop_budget_reached"
+  | "stop_resolved"
   | "verify_candidate"
   | "resolve_incident"
   | "resume_interrupted";
@@ -78,13 +79,18 @@ export function decideNextAction(input: NextActionInput, candidateLimit = 3): Ne
     hypotheses,
     strategies: input.strategies,
     validations,
+    research,
     usage,
     budgetConfig,
     nowMs: input.nowMs,
   });
 
   const dismissed = new Set(exhaustion.dismissed_families);
-  const { candidates, rerun_candidates } = rankRefinementCandidates({ experiments, hypotheses, research, evidence, dismissed_family_ids: dismissed }, candidateLimit);
+  const ranked = rankRefinementCandidates({ experiments, hypotheses, research, evidence, dismissed_family_ids: dismissed }, Math.max(candidateLimit, experiments.length));
+  // Only attempts that can still receive a variant within the variant/depth budgets are real refinement candidates.
+  const refinableIds = new Set(refinableAttempts(experiments, usage, budgetConfig, dismissed).map((e) => e.experiment_id));
+  const candidates = ranked.candidates.filter((c) => refinableIds.has(c.experiment_id)).slice(0, Math.max(1, candidateLimit));
+  const rerun_candidates = ranked.rerun_candidates;
   const untested = untestedLiveHypotheses(hypotheses, experiments);
   const budgetNote =
     budgetConfig.cost_limit === null
@@ -108,7 +114,7 @@ export function decideNextAction(input: NextActionInput, candidateLimit = 3): Ne
 
   switch (exhaustion.state) {
     case "resolved": {
-      next.recommended_action = "continue_exploring";
+      next.recommended_action = "stop_resolved";
       next.why_now = "The incident is resolved and verified; no further investigation is required. A new failure report should open or reopen a case.";
       next.unresolved_uncertainty = "Verification was environment- and criteria-scoped; recurrence under other conditions reopens the case.";
       next.risk_considerations = "None — no action recommended.";
@@ -136,7 +142,7 @@ export function decideNextAction(input: NextActionInput, candidateLimit = 3): Ne
     }
     case "refinement_required": {
       const top = candidates[0];
-      const needsResearch = !research.some((r) => top?.hypothesis_id === r.hypothesis_id || top?.experiment_id === r.experiment_id);
+      const needsResearch = research.length === 0;
       next.recommended_action = "refine_failed_experiment";
       next.parent_experiment_id = top?.experiment_id ?? null;
       next.hypothesis_id = top?.hypothesis_id ?? null;
@@ -152,17 +158,21 @@ export function decideNextAction(input: NextActionInput, candidateLimit = 3): Ne
     }
     case "research_required": {
       const allRejected = hypotheses.length > 0 && hypotheses.every((h) => h.status === "rejected");
-      next.recommended_action = allRejected || untested.length === 0 ? "develop_new_strategy" : "research_uncertainty";
-      next.why_now = allRejected
-        ? "Every recorded hypothesis is rejected and no refinement signal exists — research (docs/source/changelogs/issues) is required to form a genuinely new hypothesis before another experiment."
-        : "The current evidence is insufficient to design a promising next experiment; research the open uncertainty first.";
+      const researched = researchSinceLastBaseFailure(experiments, research).length > 0;
+      // Intended loop: attempts fail -> research -> variant of the best failed attempt -> (variants exhausted) new strategy.
+      next.recommended_action = researched ? "develop_new_strategy" : "research_uncertainty";
+      next.why_now = researched
+        ? "Research is on file but no failed attempt has variant or depth budget left to refine — open a new strategy family based on what the research established."
+        : allRejected
+          ? "Every recorded hypothesis is rejected and no refinement signal exists — research (docs/source/changelogs/issues) and record it with debug_research_record; that unlocks a variant of the best failed attempt."
+          : "The current evidence is insufficient to design a promising next experiment; research the failure first and record it with debug_research_record, which unlocks a variant of the best failed attempt.";
       next.supporting_evidence = exhaustion.reasons;
       next.unresolved_uncertainty = untested.length > 0 ? `Untested hypotheses exist (${untested.length}) but lack the information needed to design a discriminating experiment.` : "A new explanation is needed.";
       next.risk_considerations = "Research is read-only; record findings with debug_research_record (treated as untrusted data).";
       next.cost_considerations = "Research cost only; no experiment budget is spent.";
       next.what_would_change = [
         ...next.what_would_change,
-        "Research that produces a supported new hypothesis moves the state back to exploring (try_untested_experiment).",
+        "A supported new live hypothesis moves the state back to exploring (try_untested_experiment).",
       ];
       break;
     }
@@ -172,7 +182,7 @@ export function decideNextAction(input: NextActionInput, candidateLimit = 3): Ne
         (e) => e.execution_status === "interrupted" || e.outcome_status === "inconclusive" || e.execution_status === "running" || e.outcome_status === "pending",
       );
       const candidate = attempts.find((e) => e.outcome_status === "candidate");
-      const verified = attempts.find((e) => e.outcome_status === "verified");
+      const verified = incident.status === "reopened" ? undefined : attempts.find((e) => e.outcome_status === "verified");
       if (verified) {
         next.recommended_action = "resolve_incident";
         next.why_now = `Attempt ${verified.display_label ?? verified.experiment_id} passed validation — record the resolution (debug_case_status_update with the validation id) before anything else.`;

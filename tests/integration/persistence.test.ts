@@ -79,7 +79,7 @@ test("command success is NOT a verified fix; verified only via validation criter
   const a1 = store.createExperiment({ incident_id: inc.incident_id, node_kind: "experiment", title: "Add guard", proposed_change: "null check", expected_observation: "no crash", actor: "agent" }).experiment;
 
   // A command completes fine but the bug remains -> outcome failed, not verified.
-  store.recordEvidence({ project_id: inc.project_id, incident_id: inc.incident_id, experiment_id: a1.experiment_id, evidence_type: "stderr", content: "exit code 0 but crash persists", capture_source: "agent" });
+  const ev = store.recordEvidence({ project_id: inc.project_id, incident_id: inc.incident_id, experiment_id: a1.experiment_id, evidence_type: "stderr", content: "exit code 0 but crash persists", capture_source: "agent" });
   store.updateExperiment(a1.experiment_id, { execution_status: "completed", outcome_status: "failed", actual_observation: "crash persists despite exit 0", actor: "agent" });
   expect(store.getIncidentOrFail(inc.incident_id).status).toBe("open");
 
@@ -97,7 +97,7 @@ test("command success is NOT a verified fix; verified only via validation criter
     incident_id: inc.incident_id, experiment_id: a1.experiment_id,
     validation_plan: "malformed input returns 400",
     criteria_results: [{ criteria: "returns 400", status: "passed" }, { criteria: "no crash", status: "passed" }],
-    execution_result: "passed", evidence_ids: [], verified_by: "agent",
+    execution_result: "passed", evidence_ids: [ev.evidence.evidence_id], verified_by: "agent",
   });
   expect(passing.decision).toBe("verified");
   expect(store.getExperiment(a1.experiment_id)!.outcome_status).toBe("verified");

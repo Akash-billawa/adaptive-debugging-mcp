@@ -16,9 +16,9 @@
  * - search_space_exhausted is only ever "the defined, tracked paths within
  *   configured limits"; new hypotheses or evidence always reopen the search.
  */
-import type { Experiment, Hypothesis, Incident, Strategy, ValidationRun } from "../types.ts";
+import type { Experiment, Hypothesis, Incident, ResearchReference, Strategy, ValidationRun } from "../types.ts";
 import type { BudgetUsage, BudgetConfig } from "./budgets.ts";
-import { evaluateNewExperimentBudget } from "./budgets.ts";
+import { evaluateNewExperimentBudget, variantDepthOf } from "./budgets.ts";
 
 export type ExhaustionState =
   | "resolved"
@@ -47,9 +47,43 @@ export interface ExhaustionInput {
   hypotheses: Hypothesis[];
   strategies: Strategy[]; // strategies-table rows (dismissal records with rationale)
   validations: ValidationRun[];
+  /** Research recorded for the incident. Recording research after the failures is what unlocks refinement. */
+  research?: ResearchReference[];
   usage: BudgetUsage;
   budgetConfig: BudgetConfig;
   nowMs?: number;
+}
+
+/** Failed/partial attempts that can still receive a variant within max_variants_per_parent and max_refinement_depth. */
+export function refinableAttempts(
+  experiments: Experiment[],
+  usage: BudgetUsage,
+  config: BudgetConfig,
+  dismissed: Set<string> = new Set(),
+): Experiment[] {
+  const byId = new Map(experiments.map((e) => [e.experiment_id, e]));
+  return experiments.filter(
+    (e) =>
+      e.node_kind !== "strategy" &&
+      (e.outcome_status === "failed" || e.outcome_status === "partial") &&
+      (usage.variants_per_parent[e.experiment_id] ?? 0) < config.max_variants_per_parent &&
+      variantDepthOf(e, byId) + 1 <= config.max_refinement_depth &&
+      !dismissed.has(familyRootId(e, byId)),
+  );
+}
+
+/**
+ * Research recorded since the most recent failed/partial BASE (non-variant) attempt, i.e. new information
+ * gathered after the approaches failed. A failing variant does not reset this: one round of research can
+ * support several variants of the best failed attempt (A1A, A1B, ...).
+ */
+export function researchSinceLastBaseFailure(experiments: Experiment[], research: ResearchReference[]): ResearchReference[] {
+  const baseFailTimes = experiments
+    .filter((e) => e.node_kind === "experiment" && (e.outcome_status === "failed" || e.outcome_status === "partial"))
+    .map((e) => e.completed_at ?? e.updated_at)
+    .filter(Boolean) as string[];
+  const last = baseFailTimes.sort().at(-1) ?? "";
+  return research.filter((r) => r.created_at >= last);
 }
 
 /** Family root id for an experiment within the given set. */
@@ -123,7 +157,7 @@ export function assessExhaustion(input: ExhaustionInput): ExhaustionAssessment {
 
   // 3) A candidate awaiting verification, or a verified experiment before resolution bookkeeping
   const candidate = attempts.find((e) => e.outcome_status === "candidate");
-  const verifiedExp = attempts.find((e) => e.outcome_status === "verified");
+  const verifiedExp = incident.status === "reopened" ? undefined : attempts.find((e) => e.outcome_status === "verified");
   if (candidate || verifiedExp) {
     const e = candidate ?? verifiedExp!;
     return {
@@ -206,7 +240,9 @@ export function assessExhaustion(input: ExhaustionInput): ExhaustionAssessment {
   }
 
   // 7) Partial-improvement signals → refinement has an evidence basis
-  const partialSignals = attempts.filter((e) => e.outcome_status === "partial" || (e.outcome_status === "failed" && e.environment_delta));
+  const dismissedNow = dismissedFamilyIds(experiments, strategies, byId);
+  const refinable = new Set(refinableAttempts(experiments, usage, budgetConfig, dismissedNow).map((e) => e.experiment_id));
+  const partialSignals = attempts.filter((e) => (e.outcome_status === "partial" || (e.outcome_status === "failed" && e.environment_delta)) && refinable.has(e.experiment_id));
   if (partialSignals.length > 0) {
     return {
       state: "refinement_required",
@@ -248,8 +284,24 @@ export function assessExhaustion(input: ExhaustionInput): ExhaustionAssessment {
     };
   }
 
+  // 8b) Failures + research recorded since the last base failure -> refine the best failed attempt
+  const freshResearch = researchSinceLastBaseFailure(experiments, input.research ?? []);
+  if (freshResearch.length > 0 && refinable.size > 0) {
+    return {
+      state: "refinement_required",
+      search_space_exhausted: false,
+      reasons: [
+        "Executed approaches failed, and research recorded since then gives a basis for a variant of the best failed attempt.",
+        ...freshResearch.slice(0, 3).map((r) => `Research (${r.source_type}): ${r.claim_supported_or_challenged}`),
+      ],
+      evidence_refs: freshResearch.map((r) => r.research_reference_id),
+      what_would_change: ["Ranking selects the best-supported parent; each variant must state reason_for_difference.", "When no failed attempt has variant or depth budget left, the next step is a new strategy family."],
+      pending_work: pendingWork,
+      dismissed_families: dismissedNow,
+    };
+  }
+
   // 9) Evidence insufficient to design a promising next experiment
-  const hasAnyResearch = input.validations.length >= 0; // placeholder removed below
   reasons.push(
     "Every executed attempt within the tracked strategies failed without partial-improvement signals, and no untested live hypothesis remains.",
   );
@@ -263,10 +315,11 @@ export function assessExhaustion(input: ExhaustionInput): ExhaustionAssessment {
     );
   }
   whatWouldChange.push(
-    "Research that produces a new hypothesis, or new evidence, reopens the investigation (lifecycle: reopened).",
+    freshResearch.length === 0
+      ? "Recording research (debug_research_record) after the failures moves this to refinement_required; a new live hypothesis moves it to exploring."
+      : "Research is on file but no failed attempt has variant/depth budget left: open a new strategy family, raise the budget, or add a new live hypothesis.",
     "A previously dismissed strategy can be revisited with a recorded reason (revisits_with_changed_environment).",
   );
-  void hasAnyResearch;
   return {
     state: "research_required",
     search_space_exhausted: allStrategiesDismissed || liveIds.size === 0,

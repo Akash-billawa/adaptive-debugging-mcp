@@ -337,6 +337,9 @@ export class Store {
           throw notFound(`verification record not found for this incident: ${opts.verification_id}`);
         if (val.resolution_decision !== "verified")
           throw validationError("referenced validation run did not reach a verified decision");
+        const exp = this.getExperiment(val.experiment_id);
+        if (!exp || exp.outcome_status !== "verified")
+          throw validationError(`referenced experiment ${val.experiment_id} does not have verified outcome status`);
         resolutionExperimentId = val.experiment_id;
       }
       if (!rationale) throw validationError("rationale is required for status change");
@@ -348,6 +351,10 @@ export class Store {
         this.db
           .query("UPDATE incidents SET resolved_at = ?, resolution_experiment_id = ? WHERE incident_id = ?")
           .run(t, resolutionExperimentId, id);
+      } else {
+        this.db
+          .query("UPDATE incidents SET resolved_at = NULL, resolution_experiment_id = NULL WHERE incident_id = ?")
+          .run(id);
       }
       appendTimelineEvent(this.db, {
         incident_id: id,
@@ -364,16 +371,29 @@ export class Store {
   findRelatedIncidents(project: ProjectInput, fingerprints: { fingerprint_value: string }[], symptom: string): Incident[] {
     const results: Incident[] = [];
     const seen = new Set<string>();
+    const projectId = project.project_id ?? (
+      (project.repository_uri || project.canonical_root)
+        ? (this.db
+            .query("SELECT project_id FROM projects WHERE repository_uri = ? OR canonical_root = ? LIMIT 1")
+            .get(project.repository_uri ?? null, project.canonical_root ?? null) as { project_id: string } | null)?.project_id
+        : null
+    );
+
     for (const fp of fingerprints) {
-      const rows = this.db
-        .query(
-          `SELECT i.* FROM incidents i JOIN fingerprints f ON f.incident_id = i.incident_id WHERE f.fingerprint_value = ? LIMIT 5`,
-        )
-        .all(fp.fingerprint_value) as unknown as Incident[];
+      const rows = projectId
+        ? (this.db
+            .query(
+              `SELECT i.* FROM incidents i JOIN fingerprints f ON f.incident_id = i.incident_id WHERE f.fingerprint_value = ? AND i.project_id = ? LIMIT 5`,
+            )
+            .all(fp.fingerprint_value, projectId) as unknown as Incident[])
+        : (this.db
+            .query(
+              `SELECT i.* FROM incidents i JOIN fingerprints f ON f.incident_id = i.incident_id WHERE f.fingerprint_value = ? LIMIT 5`,
+            )
+            .all(fp.fingerprint_value) as unknown as Incident[]);
       for (const r of rows) if (!seen.has(r.incident_id)) { seen.add(r.incident_id); results.push(r); }
     }
     // Project-scoped approximate match on symptom title terms.
-    void project;
     void symptom;
     return results;
   }
@@ -531,6 +551,26 @@ export class Store {
     return this.db.query("SELECT * FROM strategies WHERE incident_id = ? ORDER BY created_at ASC").all(incidentId) as unknown as Strategy[];
   }
 
+  updateStrategyStatus(id: string, status: string, rationale: string, actor: string): Strategy {
+    if (!isOneOf(STRATEGY_STATUS, status)) throw validationError(`invalid strategy status: ${status}`);
+    if (!rationale || !rationale.trim()) throw validationError("rationale is required for strategy status change");
+    return this.tx(() => {
+      const strat = this.getStrategy(id);
+      if (!strat) throw notFound(`strategy not found: ${id}`);
+      this.db.query("UPDATE strategies SET status = ?, updated_at = ? WHERE strategy_id = ?").run(status, now(), id);
+      appendTimelineEvent(this.db, {
+        incident_id: strat.incident_id,
+        event_type: `strategy.${status}`,
+        actor: actor as any,
+        related_entity_type: "strategy",
+        related_entity_id: id,
+        summary: `Strategy ${strat.status} -> ${status}: ${rationale}`,
+        details: { rationale, from_status: strat.status, to_status: status },
+      });
+      return this.getStrategy(id)!;
+    });
+  }
+
   // --- Experiments (tree) --------------------------------------------------
   getExperiment(id: string): Experiment | null {
     return this.db.query("SELECT * FROM experiments WHERE experiment_id = ?").get(id) as unknown as Experiment | null;
@@ -570,6 +610,22 @@ export class Store {
 
     let budgetWarnings: string[] = [];
     const result = this.tx(() => {
+      if (input.hypothesis_id) {
+        const hyp = this.getHypothesis(input.hypothesis_id);
+        if (!hyp) throw notFound(`hypothesis not found: ${input.hypothesis_id}`);
+        if (hyp.incident_id !== input.incident_id) throw validationError("hypothesis belongs to a different incident");
+      }
+      if (input.strategy_id) {
+        const strat = this.getStrategy(input.strategy_id);
+        if (!strat) throw notFound(`strategy not found: ${input.strategy_id}`);
+        if (strat.incident_id !== input.incident_id) throw validationError("strategy belongs to a different incident");
+      }
+      if (input.inspired_by_experiment_id) {
+        const insp = this.getExperiment(input.inspired_by_experiment_id);
+        if (!insp) throw notFound(`inspired_by experiment not found: ${input.inspired_by_experiment_id}`);
+        if (insp.incident_id !== input.incident_id) throw validationError("inspired_by experiment belongs to a different incident");
+      }
+
       let parentLabel: string | null = null;
       let depth = 0;
       if (input.parent_experiment_id) {
@@ -577,6 +633,14 @@ export class Store {
         if (!parent) throw notFound(`parent experiment not found: ${input.parent_experiment_id}`);
         if (parent.incident_id !== input.incident_id)
           throw validationError("parent experiment belongs to a different incident");
+        if (parent.node_kind === "experiment" || parent.node_kind === "variant") {
+          if (input.node_kind === "strategy") {
+            throw validationError("a strategy node cannot be a child of an experiment or variant");
+          }
+          if ((parent.outcome_status === "failed" || parent.outcome_status === "partial") && !input.reason_for_difference) {
+            throw validationError("an attempt under a failed parent requires reason_for_difference (what materially differs and why)");
+          }
+        }
         parentLabel = parent.display_label;
         // ancestorDepth(parent) counts nodes from parent up to root inclusive,
         // which equals the NEW node's depth (root = 0).
@@ -610,7 +674,7 @@ export class Store {
         parent_experiment_id: input.parent_experiment_id ?? null,
         parent_family_root_id: parentFamilyRootId,
         new_variant_depth: newVariantDepth,
-        risk_level: input.risk_level ?? "unknown",
+        risk_level: input.risk_level ?? "low",
       });
       if (budgetEval.blocked)
         throw new McpError(ErrorCategory.LIMIT_EXCEEDED, budgetEval.blocked.message, {
@@ -637,7 +701,7 @@ export class Store {
         expected_observation: input.expected_observation ?? null,
         preconditions: input.preconditions ?? null,
         environment_id: null,
-        risk_level: input.risk_level ?? "unknown",
+        risk_level: input.risk_level ?? "low",
         estimated_cost: input.estimated_cost ?? null,
         execution_status: "not_started",
         outcome_status: "pending",
@@ -798,7 +862,11 @@ export class Store {
       childrenOf.get(key)!.push(e);
     }
     const toNode = (e: Experiment, depth: number): TreeNode => {
-      const kids = (childrenOf.get(e.experiment_id) ?? []).map((c) => toNode(c, depth + 1));
+      const hasKids = (childrenOf.get(e.experiment_id) ?? []).length > 0;
+      const shouldDescend = depth < maxDepth;
+      const kids = shouldDescend
+        ? (childrenOf.get(e.experiment_id) ?? []).map((c) => toNode(c, depth + 1))
+        : [];
       return {
         experiment_id: e.experiment_id,
         label: e.display_label,
@@ -810,7 +878,7 @@ export class Store {
         outcome_status: e.outcome_status,
         depth,
         children: kids,
-        truncated: depth >= maxDepth && (childrenOf.get(e.experiment_id) ?? []).length > 0,
+        truncated: !shouldDescend && hasKids,
       };
     };
     let roots: Experiment[];
@@ -860,10 +928,16 @@ export class Store {
       if (status === "redacted") warnings.push("secrets_redacted_before_storage");
       if (truncated) warnings.push("content_truncated_to_size_limit");
 
+      const resolvedIncidentId = input.incident_id ?? (input.experiment_id ? this.getExperiment(input.experiment_id)?.incident_id ?? null : null);
+      let resolvedProjectId = input.project_id;
+      if (!resolvedProjectId && resolvedIncidentId) {
+        resolvedProjectId = this.getIncident(resolvedIncidentId)?.project_id ?? "";
+      }
+
       const evidence: Evidence = {
         evidence_id: id,
-        project_id: input.project_id,
-        incident_id: input.incident_id ?? null,
+        project_id: resolvedProjectId,
+        incident_id: resolvedIncidentId,
         experiment_id: input.experiment_id ?? null,
         hypothesis_id: input.hypothesis_id ?? null,
         validation_run_id: input.validation_run_id ?? null,
@@ -895,7 +969,7 @@ export class Store {
         .query("INSERT INTO evidence_content(evidence_id, content, truncated, original_size_bytes) VALUES(?,?,?,?)")
         .run(id, bounded, truncated ? 1 : 0, originalSize);
 
-      const incId = input.incident_id ?? (input.experiment_id ? this.getExperiment(input.experiment_id)?.incident_id ?? null : null);
+      const incId = resolvedIncidentId;
       if (incId) {
         fts.indexEvidence(this.db, id, incId, input.experiment_id ?? null, input.evidence_type, `${evidence.interpretation ?? ""} ${bounded}`);
         appendTimelineEvent(this.db, {
@@ -1010,9 +1084,24 @@ export class Store {
       if (!exp) throw notFound(`experiment not found: ${input.experiment_id}`);
       if (exp.incident_id !== input.incident_id) throw validationError("experiment belongs to a different incident");
 
-      const hasFailed = input.criteria_results.some((c) => c.status === "failed");
+      const evidenceList = Array.isArray(input.evidence_ids) ? input.evidence_ids : [];
+      for (const eid of evidenceList) {
+        const ev = this.db.query("SELECT incident_id FROM evidence WHERE evidence_id = ?").get(eid) as { incident_id: string } | null;
+        if (!ev) throw notFound(`evidence not found: ${eid}`);
+        if (ev.incident_id !== input.incident_id) {
+          throw validationError(`evidence ${eid} belongs to a different incident`);
+        }
+      }
+
+      const isExecutionPassed = input.execution_result === "passed";
+      const allPassed =
+        Array.isArray(input.criteria_results) &&
+        input.criteria_results.length > 0 &&
+        input.criteria_results.every((c) => c.status === "passed");
+      const hasEvidence = evidenceList.length > 0;
+
       const decision =
-        input.execution_result === "passed" && !hasFailed ? "verified" : "unverified";
+        isExecutionPassed && allPassed && hasEvidence ? "verified" : "unverified";
 
       const validation: ValidationRun = {
         validation_run_id: ids.validation(),
@@ -1021,7 +1110,7 @@ export class Store {
         validation_plan: input.validation_plan,
         criteria_results: JSON.stringify(input.criteria_results),
         execution_result: input.execution_result as ValidationRun["execution_result"],
-        evidence_ids: JSON.stringify(input.evidence_ids ?? []),
+        evidence_ids: JSON.stringify(evidenceList),
         validated_environment_id: input.validated_environment_id ?? null,
         verified_by: (input.verified_by as any) ?? "agent",
         validated_at: now(),
@@ -1031,9 +1120,13 @@ export class Store {
         decision_rationale:
           decision === "verified"
             ? "All required acceptance criteria passed with recorded evidence."
-            : hasFailed
-              ? "One or more acceptance criteria failed; resolution not verified."
-              : "Validation did not pass all criteria under the required conditions.",
+            : !isExecutionPassed
+              ? "Validation execution did not pass; resolution not verified."
+              : !hasEvidence
+                ? "Validation has no supporting evidence recorded; resolution not verified."
+                : !allPassed
+                  ? "One or more acceptance criteria failed or were not evaluated; resolution not verified."
+                  : "Validation did not pass all criteria under the required conditions.",
         created_at: now(),
       };
       this.db
@@ -1137,6 +1230,13 @@ export class Store {
   }
 
   associateObservation(observationId: string, incidentId: string, experimentId?: string | null): void {
+    const inc = this.getIncident(incidentId);
+    if (!inc) throw notFound(`incident not found: ${incidentId}`);
+    if (experimentId) {
+      const exp = this.getExperiment(experimentId);
+      if (!exp) throw notFound(`experiment not found: ${experimentId}`);
+      if (exp.incident_id !== incidentId) throw validationError("experiment belongs to a different incident");
+    }
     this.db
       .query("UPDATE plugin_observations SET incident_id = ?, experiment_id = ? WHERE observation_id = ?")
       .run(incidentId, experimentId ?? null, observationId);
@@ -1206,10 +1306,12 @@ export class Store {
     const err = validateBudgetConfigPatch(input.config);
     if (err) throw validationError(err);
     return this.tx(() => {
+      const current = this.getBudgetRow(input.scope, input.project_id, input.incident_id);
       const base =
-        input.scope === "incident"
+        current ??
+        (input.scope === "incident"
           ? this.getBudgetRow("project", input.project_id, null) ?? { ...DEFAULT_BUDGET_CONFIG }
-          : { ...DEFAULT_BUDGET_CONFIG };
+          : { ...DEFAULT_BUDGET_CONFIG });
       const merged = mergeBudgetConfig(base, input.config);
       const t = now();
       this.db

@@ -4,7 +4,7 @@
       "command": "bun",
       "args": [
         "run",
-        "./src/server/index.ts"
+        "C:/Adaptive Debugging MCP/adaptive-debugging-mcp/src/server/index.ts"
       ]
     }
   }

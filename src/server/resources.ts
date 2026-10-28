@@ -9,64 +9,86 @@
  */
 
 import type { Store } from "../memory/store.ts";
-import type { ResourceDef } from "./protocol.ts";
+import type { ResourceDef, ResourceTemplateDef } from "./protocol.ts";
 import { notFound, validationError } from "../errors.ts";
 import { generateDashboardHtml } from "../dashboard/generator.ts";
 
-export function listResourceTemplates(store: Store): ResourceDef[] {
-  const templates: ResourceDef[] = [
+export function listResourceTemplates(): ResourceTemplateDef[] {
+  return [
+    {
+      uriTemplate: "debug://dashboard",
+      name: "Interactive Visual Dashboard",
+      description: "Self-contained interactive HTML visual dashboard across all debugging projects and incidents.",
+      mimeType: "text/html",
+    },
+    {
+      uriTemplate: "debug://project/{project_id}/dashboard",
+      name: "Project Visual Dashboard",
+      description: "Interactive HTML visual dashboard scoped to a specific project.",
+      mimeType: "text/html",
+    },
+    {
+      uriTemplate: "debug://incident/{incident_id}/dashboard",
+      name: "Incident Inspector Dashboard",
+      description: "Interactive HTML deep inspector and experiment tree for a specific incident.",
+      mimeType: "text/html",
+    },
+    {
+      uriTemplate: "debug://incident/{incident_id}/summary",
+      name: "Incident Summary",
+      description: "Authoritative incident summary with explicit uncertainty, symptoms, status, and open hypotheses.",
+      mimeType: "application/json",
+    },
+    {
+      uriTemplate: "debug://incident/{incident_id}/tree",
+      name: "Experiment Tree",
+      description: "Nested strategy and experiment branch tree with outcomes and truncation disclosure.",
+      mimeType: "application/json",
+    },
+    {
+      uriTemplate: "debug://attempt/{attempt_id}/evidence",
+      name: "Attempt Evidence",
+      description: "Attached evidence references, observations, and interpretations for a specific experiment node.",
+      mimeType: "application/json",
+    },
+    {
+      uriTemplate: "debug://evidence/{evidence_id}/content",
+      name: "Evidence Raw Content",
+      description: "Stored, redacted, and bounded raw content payload for an evidence record.",
+      mimeType: "text/plain",
+    },
+    {
+      uriTemplate: "debug://project/{project_id}/recent",
+      name: "Recent Project Incidents",
+      description: "Recent investigations and current unresolved incidents for a given project.",
+      mimeType: "application/json",
+    },
+  ];
+}
+
+export function listConcreteResources(store: Store): ResourceDef[] {
+  const resources: ResourceDef[] = [
     {
       uri: "debug://dashboard",
       name: "Interactive Visual Dashboard",
       description: "Self-contained interactive HTML visual dashboard across all debugging projects and incidents.",
       mimeType: "text/html",
     },
-    {
-      uri: "debug://project/{project_id}/dashboard",
-      name: "Project Visual Dashboard",
-      description: "Interactive HTML visual dashboard scoped to a specific project.",
-      mimeType: "text/html",
-    },
-    {
-      uri: "debug://incident/{incident_id}/dashboard",
-      name: "Incident Inspector Dashboard",
-      description: "Interactive HTML deep inspector and experiment tree for a specific incident.",
-      mimeType: "text/html",
-    },
-    {
-      uri: "debug://incident/{incident_id}/summary",
-      name: "Incident Summary",
-      description: "Authoritative incident summary with explicit uncertainty, symptoms, status, and open hypotheses.",
-      mimeType: "application/json",
-    },
-    {
-      uri: "debug://incident/{incident_id}/tree",
-      name: "Experiment Tree",
-      description: "Nested strategy and experiment branch tree with outcomes and truncation disclosure.",
-      mimeType: "application/json",
-    },
-    {
-      uri: "debug://attempt/{attempt_id}/evidence",
-      name: "Attempt Evidence",
-      description: "Attached evidence references, observations, and interpretations for a specific experiment node.",
-      mimeType: "application/json",
-    },
-    {
-      uri: "debug://project/{project_id}/recent",
-      name: "Recent Project Incidents",
-      description: "Recent investigations and current unresolved incidents for a given project.",
-      mimeType: "application/json",
-    },
   ];
 
-  // Dynamically expose active incidents for direct discovery in IDE resource lists
   try {
     const active = store.db.query("SELECT incident_id, title FROM incidents ORDER BY updated_at DESC LIMIT 15").all() as Array<{ incident_id: string; title: string }>;
     for (const inc of active) {
-      templates.push({
+      resources.push({
         uri: `debug://incident/${inc.incident_id}/summary`,
         name: `Incident: ${inc.title.slice(0, 50)}`,
         description: `Current summary for incident ${inc.incident_id}`,
+        mimeType: "application/json",
+      });
+      resources.push({
+        uri: `debug://incident/${inc.incident_id}/tree`,
+        name: `Tree: ${inc.title.slice(0, 50)}`,
+        description: `Experiment branch tree for incident ${inc.incident_id}`,
         mimeType: "application/json",
       });
     }
@@ -74,7 +96,7 @@ export function listResourceTemplates(store: Store): ResourceDef[] {
     /* ignore if DB is not yet populated */
   }
 
-  return templates;
+  return resources;
 }
 
 export function readResourceHandler(
@@ -128,7 +150,7 @@ export function readResourceHandler(
         return acc;
       }, {} as Record<string, number>),
       validations_count: validations.length,
-      recent_validations: validations.slice(0, 5),
+      recent_validations: validations.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 5),
     };
 
     return {
@@ -140,6 +162,9 @@ export function readResourceHandler(
   const treeMatch = path.match(/^incident\/([^/]+)\/tree$/);
   if (treeMatch) {
     const incidentId = treeMatch[1];
+    const incident = store.getIncident(incidentId);
+    if (!incident) throw notFound(`Incident not found: ${incidentId}`);
+
     const tree = store.buildTree(incidentId, null, 8);
     const payload = {
       incident_id: incidentId,
@@ -164,7 +189,14 @@ export function readResourceHandler(
     const payload = {
       experiment: expRow,
       evidence_count: evidence.length,
-      evidence,
+      evidence: evidence.map((e) => {
+        const c = store.getEvidenceContent(e.evidence_id);
+        return {
+          ...e,
+          content: c?.content ?? "",
+          truncated: c?.truncated ?? false,
+        };
+      }),
     };
 
     return {
@@ -172,7 +204,19 @@ export function readResourceHandler(
     };
   }
 
-  // 4. debug://project/{id}/recent
+  // 4. debug://evidence/{id}/content
+  const evidenceContentMatch = path.match(/^evidence\/([^/]+)\/content$/);
+  if (evidenceContentMatch) {
+    const evidenceId = evidenceContentMatch[1];
+    const ev = store.getEvidence(evidenceId);
+    if (!ev) throw notFound(`Evidence not found: ${evidenceId}`);
+    const row = store.getEvidenceContent(evidenceId);
+    return {
+      contents: [{ uri, mimeType: "text/plain", text: row?.content ?? "" }],
+    };
+  }
+
+  // 5. debug://project/{id}/recent
   const projectMatch = path.match(/^project\/([^/]+)\/recent$/);
   if (projectMatch) {
     const projectId = projectMatch[1];

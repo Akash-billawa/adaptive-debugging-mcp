@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import type { Experiment, Hypothesis, Incident, Strategy, ValidationRun } from "../../src/types.ts";
+import type { Experiment, Hypothesis, Incident, ResearchReference, Strategy, ValidationRun } from "../../src/types.ts";
 import {
   DEFAULT_BUDGET_CONFIG,
   mergeBudgetConfig,
@@ -59,6 +59,7 @@ function assess(
   experiments: Experiment[],
   over: {
     incident?: Incident; hypotheses?: Hypothesis[]; strategies?: Strategy[]; validations?: ValidationRun[];
+    research?: ResearchReference[];
     config?: Partial<BudgetConfig>;
   } = {},
 ) {
@@ -70,6 +71,7 @@ function assess(
     hypotheses: over.hypotheses ?? [],
     strategies: over.strategies ?? [],
     validations: over.validations ?? [],
+    research: over.research ?? [],
     usage: makeUsage(experiments, incident),
     budgetConfig: config,
     nowMs: NOW,
@@ -107,7 +109,8 @@ test("usage: families, variants-per-parent, totals; strategies never count as at
   expect(usage.total_experiments).toBe(4); // strategy node excluded
   expect(usage.families.length).toBe(2);
   const famA = usage.families.find((f) => f.root_id === "A")!;
-  expect(famA.attempts).toBe(3);
+  // Variants are bounded by max_variants_per_parent / max_refinement_depth (and the total), not by the family cap.
+  expect(famA.attempts).toBe(1);
   expect(usage.variants_per_parent["A1"]).toBe(2);
 });
 
@@ -175,6 +178,22 @@ test("budget enforcement: hard limits and warnings", () => {
     node_kind: "strategy", parent_experiment_id: null, parent_family_root_id: null, new_variant_depth: 0, risk_level: "low",
   });
   expect(stratNode.blocked).toBeNull();
+});
+
+test("budget: a full family (default config) still accepts variants of its attempts, but not another base attempt", () => {
+  const stratA = makeExp({ experiment_id: "A", node_kind: "strategy" });
+  const fam = [stratA, ...[1, 2, 3].map((i) => makeExp({ experiment_id: `A${i}`, parent_experiment_id: "A", outcome_status: "failed" }))];
+  const variant = evaluateNewExperimentBudget(DEFAULT_BUDGET_CONFIG, makeUsage(fam), {
+    node_kind: "variant", parent_experiment_id: "A1", parent_family_root_id: "A", new_variant_depth: 1, risk_level: "low",
+  });
+  expect(variant.blocked).toBeNull();
+  const fourthBase = evaluateNewExperimentBudget(DEFAULT_BUDGET_CONFIG, makeUsage(fam), {
+    node_kind: "experiment", parent_experiment_id: "A", parent_family_root_id: "A", new_variant_depth: 0, risk_level: "low",
+  });
+  expect(fourthBase.blocked?.limit_name).toBe("max_experiments_per_family");
+  // variants still count toward the investigation total
+  const withVariants = [...fam, ...[1, 2, 3].map((i) => makeExp({ experiment_id: `A1_${i}`, node_kind: "variant", parent_experiment_id: "A1" }))];
+  expect(makeUsage(withVariants).total_experiments).toBe(6);
 });
 
 // --- exhaustion ------------------------------------------------------------------
@@ -267,6 +286,52 @@ test("exhaustion: research_required; tracked-space exhaustion only with full dis
     hypotheses: [makeHyp({ hypothesis_id: "hyp_1", status: "rejected" }), makeHyp({ hypothesis_id: "hyp_new", status: "proposed" })],
   });
   expect(c.state).toBe("exploring");
+});
+
+function makeResearch(over: Partial<ResearchReference> = {}): ResearchReference {
+  return {
+    research_reference_id: over.research_reference_id ?? `res_${++seq}`, incident_id: "inc_test", experiment_id: null, hypothesis_id: null,
+    source_uri: null, source_title: null, source_type: "official_docs", accessed_at: "2026-10-13T11:00:00.000Z",
+    relevant_summary: "docs", reliability_note: null, claim_supported_or_challenged: "supports", created_at: "2026-10-13T11:00:00.000Z", ...over,
+  };
+}
+
+test("exhaustion: failures -> research_required; research recorded afterwards -> refinement_required; no refinable attempt left -> research_required again", () => {
+  const stratA = makeExp({ experiment_id: "A", node_kind: "strategy" });
+  const fam = [1, 2, 3].map((i) =>
+    makeExp({ experiment_id: `A${i}`, parent_experiment_id: "A", outcome_status: "failed", failure_reason: `r${i}`, updated_at: "2026-10-13T10:30:00.000Z" }),
+  );
+  const hypotheses = [makeHyp({ hypothesis_id: "hyp_1", status: "rejected" })];
+  // 1) no research yet
+  expect(assess([stratA, ...fam], { hypotheses }).state).toBe("research_required");
+  // 2) research recorded BEFORE the failures does not count
+  const stale = makeResearch({ created_at: "2026-10-13T09:00:00.000Z" });
+  expect(assess([stratA, ...fam], { hypotheses, research: [stale] }).state).toBe("research_required");
+  // 3) research recorded after the failures unlocks refinement (the family is full, variants must still be allowed)
+  const fresh = makeResearch({ created_at: "2026-10-13T11:00:00.000Z" });
+  const refine = assess([stratA, ...fam], { hypotheses, research: [fresh] });
+  expect(refine.state).toBe("refinement_required");
+  expect(refine.evidence_refs).toContain(fresh.research_reference_id);
+  // 4) failing variants do not reset the research requirement
+  const variants = [1, 2, 3].map((i) =>
+    makeExp({ experiment_id: `A1_${i}`, node_kind: "variant", parent_experiment_id: "A1", outcome_status: "failed", updated_at: "2026-10-13T11:30:00.000Z" }),
+  );
+  expect(assess([stratA, ...fam, ...variants], { hypotheses, research: [fresh] }).state).toBe("refinement_required"); // A2/A3 still have variant room
+  // 5) when every failed attempt is out of variant/depth room, refinement is not offered (the budget would block it)
+  const tight = { max_variants_per_parent: 1, max_refinement_depth: 1 };
+  const oneEach = [1, 2, 3].map((i) =>
+    makeExp({ experiment_id: `A${i}v`, node_kind: "variant", parent_experiment_id: `A${i}`, outcome_status: "failed", updated_at: "2026-10-13T11:30:00.000Z" }),
+  );
+  const exhausted = assess([stratA, ...fam, ...oneEach], { hypotheses, research: [fresh], config: tight });
+  expect(exhausted.state).toBe("research_required");
+});
+
+test("exhaustion: a partial signal only routes to refinement when a variant can actually be recorded", () => {
+  const tight = { max_variants_per_parent: 1, max_refinement_depth: 1 };
+  const parent = makeExp({ experiment_id: "P", outcome_status: "partial", actual_observation: "improved" });
+  const variant = makeExp({ experiment_id: "P1", node_kind: "variant", parent_experiment_id: "P", outcome_status: "failed" });
+  expect(assess([parent], { config: tight }).state).toBe("refinement_required");
+  expect(assess([parent, variant], { config: tight }).state).not.toBe("refinement_required");
 });
 
 test("live hypothesis statuses include weakened and reopened", () => {

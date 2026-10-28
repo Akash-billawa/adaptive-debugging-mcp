@@ -120,7 +120,18 @@ export function evaluateSources(
 
   for (const src of sources) {
     const authorityScore = AUTHORITY_SCORES[src.source_type] ?? 0.5;
-    const versionMatch = calculateVersionMatch(src.claimed_version, actualVersion);
+
+    let applicableVersion = actualVersion;
+    if (environment?.packages) {
+      for (const [pkg, ver] of Object.entries(environment.packages)) {
+        if (src.source_title.toLowerCase().includes(pkg.toLowerCase()) || src.excerpt.toLowerCase().includes(pkg.toLowerCase())) {
+          applicableVersion = ver;
+          break;
+        }
+      }
+    }
+
+    const versionMatch = calculateVersionMatch(src.claimed_version, applicableVersion);
     const combinedText = `${src.excerpt} ${src.claims.join(" ")}`;
     const symptomMatch = calculateSymptomMatch(
       combinedText,

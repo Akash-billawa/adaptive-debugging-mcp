@@ -37,13 +37,22 @@ function seed(s?: Store, title = "hardening case") {
   return { s: store, inc, exp };
 }
 function verify(s: Store, incId: string, expId: string) {
+  const inc = s.getIncidentOrFail(incId);
+  const ev = s.recordEvidence({
+    project_id: inc.project_id,
+    incident_id: incId,
+    experiment_id: expId,
+    evidence_type: "stdout",
+    content: "repro passes cleanly",
+    capture_source: "agent",
+  });
   return s.recordValidation({
     incident_id: incId,
     experiment_id: expId,
     validation_plan: "original acceptance criteria",
     criteria_results: [{ criteria: "repro passes", status: "passed" }],
     execution_result: "passed",
-    evidence_ids: [],
+    evidence_ids: [ev.evidence.evidence_id],
     verified_by: "agent",
   });
 }

@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import type { Tool } from "../context.ts";
 import { str, num, bool, arr, objSchema, optStr, reqStr, optBool, optArr } from "../context.ts";
 import { validationError } from "../../errors.ts";
@@ -14,6 +15,43 @@ const ANALYSIS_TYPES: CodebaseAnalysisType[] = [
   "git_diff",
   "file_snippet",
 ];
+
+function parseEnvironmentRow(envRow: any): ResearchEnvironment | null {
+  if (!envRow) return null;
+  let packages: Record<string, string> = {};
+  if (typeof envRow.dependency_versions === "string") {
+    try { packages = JSON.parse(envRow.dependency_versions); } catch {}
+  } else if (envRow.dependency_versions && typeof envRow.dependency_versions === "object") {
+    packages = envRow.dependency_versions;
+  }
+
+  let runtime_name: string | undefined;
+  let runtime_version: string | undefined;
+  if (typeof envRow.runtime_versions === "string") {
+    try {
+      const parsed = JSON.parse(envRow.runtime_versions);
+      const keys = Object.keys(parsed);
+      if (keys.length > 0) {
+        runtime_name = keys[0];
+        runtime_version = String(parsed[keys[0]]);
+      }
+    } catch {}
+  } else if (envRow.runtime_versions && typeof envRow.runtime_versions === "object") {
+    const keys = Object.keys(envRow.runtime_versions);
+    if (keys.length > 0) {
+      runtime_name = keys[0];
+      runtime_version = String(envRow.runtime_versions[keys[0]]);
+    }
+  }
+
+  return {
+    runtime_name: runtime_name ?? envRow.runtime_name,
+    runtime_version: runtime_version ?? envRow.runtime_version,
+    packages,
+    os_name: envRow.os_name ?? undefined,
+    os_version: envRow.os_version ?? undefined,
+  };
+}
 
 export const researchTools: Tool[] = [
   {
@@ -39,18 +77,11 @@ export const researchTools: Tool[] = [
 
       const envRow = ctx.store.db
         .query(
-          "SELECT * FROM environments WHERE experiment_id IN (SELECT experiment_id FROM experiments WHERE incident_id = ?) OR experiment_id IS NULL ORDER BY captured_at DESC LIMIT 1",
+          "SELECT * FROM environments WHERE experiment_id IN (SELECT experiment_id FROM experiments WHERE incident_id = ?) OR (experiment_id IS NULL AND project_id = ?) ORDER BY captured_at DESC LIMIT 1",
         )
-        .get(incidentId) as any;
+        .get(incidentId, incident.project_id) as any;
 
-      const env: ResearchEnvironment | null = envRow
-        ? {
-            ...envRow,
-            packages: typeof envRow.packages === "string" ? JSON.parse(envRow.packages) : envRow.packages,
-            env_vars: typeof envRow.env_vars === "string" ? JSON.parse(envRow.env_vars) : envRow.env_vars,
-            metadata: typeof envRow.metadata === "string" ? JSON.parse(envRow.metadata) : envRow.metadata,
-          }
-        : null;
+      const env = parseEnvironmentRow(envRow);
 
       const plan = planResearch(incident, hypotheses, attempts, env);
       return { ok: true, plan };
@@ -85,7 +116,22 @@ export const researchTools: Tool[] = [
     },
     handle(ctx, args) {
       const incidentId = reqStr(args, "incident_id");
-      ctx.store.getIncidentOrFail(incidentId);
+      const inc = ctx.store.getIncidentOrFail(incidentId);
+      const proj = ctx.store.getProject(inc.project_id);
+
+      let repoPath = optStr(args, "repo_path");
+      if (proj?.canonical_root) {
+        if (!repoPath) {
+          repoPath = proj.canonical_root;
+        } else {
+          const resolvedRoot = path.resolve(proj.canonical_root);
+          const resolvedRepo = path.resolve(repoPath);
+          const rel = path.relative(resolvedRoot, resolvedRepo);
+          if (rel === ".." || rel.startsWith(`..${path.sep}`) || rel.startsWith("../") || path.isAbsolute(rel)) {
+            throw validationError(`repo_path must be within the project's canonical root (${proj.canonical_root}): ${repoPath}`);
+          }
+        }
+      }
 
       const analysisType = reqStr(args, "analysis_type") as CodebaseAnalysisType;
       if (!isOneOf(ANALYSIS_TYPES, analysisType)) {
@@ -93,7 +139,7 @@ export const researchTools: Tool[] = [
       }
 
       const finding = analyzeCodebase({
-        repo_path: optStr(args, "repo_path"),
+        repo_path: repoPath,
         analysis_type: analysisType,
         target_file: optStr(args, "target_file"),
         line_start: typeof args.line_start === "number" ? args.line_start : undefined,
@@ -204,18 +250,11 @@ export const researchTools: Tool[] = [
 
       const envRow = ctx.store.db
         .query(
-          "SELECT * FROM environments WHERE experiment_id IN (SELECT experiment_id FROM experiments WHERE incident_id = ?) OR experiment_id IS NULL ORDER BY captured_at DESC LIMIT 1",
+          "SELECT * FROM environments WHERE experiment_id IN (SELECT experiment_id FROM experiments WHERE incident_id = ?) OR (experiment_id IS NULL AND project_id = ?) ORDER BY captured_at DESC LIMIT 1",
         )
-        .get(incidentId) as any;
+        .get(incidentId, incident.project_id) as any;
 
-      const env: ResearchEnvironment | null = envRow
-        ? {
-            ...envRow,
-            packages: typeof envRow.packages === "string" ? JSON.parse(envRow.packages) : envRow.packages,
-            env_vars: typeof envRow.env_vars === "string" ? JSON.parse(envRow.env_vars) : envRow.env_vars,
-            metadata: typeof envRow.metadata === "string" ? JSON.parse(envRow.metadata) : envRow.metadata,
-          }
-        : null;
+      const env = parseEnvironmentRow(envRow);
 
       const result = evaluateSources(sources, incident, env);
       return {
